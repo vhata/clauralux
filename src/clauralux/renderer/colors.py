@@ -8,26 +8,27 @@ GRID_LINE = (25, 25, 40)
 TEXT = (200, 200, 200)
 TEXT_DIM = (120, 120, 120)
 
-# Player colours: index 0 = neutral, then player 1, 2, 3, ...
+# Player colours — chosen for maximum contrast against dark background
+# and against each other. Well-spaced around the hue wheel, high saturation.
 PLAYER_COLORS: dict[PlayerId, tuple[int, int, int]] = {
-    NEUTRAL: (100, 100, 100),
-    PlayerId(1): (80, 160, 255),  # blue
-    PlayerId(2): (255, 80, 80),  # red
-    PlayerId(3): (80, 255, 120),  # green
-    PlayerId(4): (255, 200, 60),  # yellow
-    PlayerId(5): (200, 100, 255),  # purple
-    PlayerId(6): (255, 160, 80),  # orange
+    NEUTRAL: (90, 90, 100),
+    PlayerId(1): (50, 140, 255),  # vivid blue
+    PlayerId(2): (255, 55, 55),  # bright red
+    PlayerId(3): (30, 220, 70),  # saturated green
+    PlayerId(4): (255, 220, 40),  # golden yellow
+    PlayerId(5): (220, 50, 255),  # magenta/violet
+    PlayerId(6): (255, 140, 30),  # deep orange
 }
 
-# Brighter versions for highlights / unit groups.
+# Brighter versions for unit groups — more white mixed in.
 PLAYER_COLORS_BRIGHT: dict[PlayerId, tuple[int, int, int]] = {
-    NEUTRAL: (140, 140, 140),
-    PlayerId(1): (130, 200, 255),
-    PlayerId(2): (255, 130, 130),
-    PlayerId(3): (130, 255, 170),
-    PlayerId(4): (255, 230, 120),
-    PlayerId(5): (230, 160, 255),
-    PlayerId(6): (255, 200, 130),
+    NEUTRAL: (140, 140, 150),
+    PlayerId(1): (120, 180, 255),
+    PlayerId(2): (255, 120, 120),
+    PlayerId(3): (100, 255, 140),
+    PlayerId(4): (255, 240, 120),
+    PlayerId(5): (240, 130, 255),
+    PlayerId(6): (255, 180, 100),
 }
 
 
