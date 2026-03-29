@@ -15,7 +15,7 @@ from clauralux.bots.rush import RushBot
 from clauralux.bots.sniper import SniperBot
 from clauralux.bots.turtle import TurtleBot
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
-from clauralux.engine.config import GameConfig
+from clauralux.engine.config import CONFIG_FIELD_META, GameConfig
 from clauralux.engine.mapgen import FLAVOURS, flavour_config, generate_map
 from clauralux.engine.maps import (
     five_player_pentagon,
@@ -69,6 +69,53 @@ def _parse_num(s: str, default: float) -> float:
         return float(token)
     except ValueError:
         return default
+
+
+def _build_config_from_menu(result: dict[str, str]) -> GameConfig:
+    """Build a GameConfig from menu result values, driven by CONFIG_FIELD_META."""
+    import dataclasses as dc
+
+    defaults = GameConfig()
+    overrides: dict[str, object] = {}
+
+    for field_name in CONFIG_FIELD_META:
+        menu_key = f"cfg_{field_name}"
+        raw = result.get(menu_key)
+        if raw is None:
+            continue
+
+        # Get the default value to determine the target type.
+        default_val = getattr(defaults, field_name)
+
+        # Special handling for fields that can be None.
+        if (default_val is None or isinstance(default_val, int | None)) and (
+            "keep" in raw or "no limit" in raw.lower()
+        ):
+            overrides[field_name] = None
+            continue
+
+        num = _parse_num(raw, float("nan"))
+        if num != num:  # NaN check — couldn't parse
+            continue
+
+        if isinstance(default_val, int):
+            overrides[field_name] = int(num)
+        elif isinstance(default_val, float):
+            overrides[field_name] = float(num)
+        elif default_val is None:
+            # int | None fields (like max_ticks, capture_level_reset)
+            overrides[field_name] = int(num) if num > 0 else None
+        else:
+            overrides[field_name] = num
+
+    # Handle max_sun_level → upgrade_costs extension.
+    max_level = overrides.get("max_sun_level", defaults.max_sun_level)
+    if isinstance(max_level, int) and max_level > len(defaults.upgrade_costs) + 1:
+        base = defaults.upgrade_costs
+        extra = tuple(40 + 20 * i for i in range(max_level - len(base) - 1))
+        overrides["upgrade_costs"] = (*base, *extra)
+
+    return dc.replace(defaults, **overrides)  # type: ignore[arg-type]
 
 
 def make_bot(name: str) -> Bot:
@@ -206,7 +253,6 @@ def _build_menu_options() -> list[MenuOption]:
 
     bot_names = list(BOT_REGISTRY.keys())
     map_choices = list(MAP_REGISTRY.keys()) + [f"random:{f}" for f in FLAVOURS]
-    speed_choices = ["1.0", "1.5", "2.0", "3.0", "5.0"]
     player_count_choices = ["2", "3", "4", "5", "6"]
     campaign_levels = [f"{i + 1}. {lvl.name}" for i, lvl in enumerate(CAMPAIGN_LEVELS)]
 
@@ -267,58 +313,26 @@ def _build_menu_options() -> list[MenuOption]:
             )
         )
 
-    not_campaign = lambda v: v["mode"] != "campaign"  # noqa: E731
+    # Auto-generate config options from CONFIG_FIELD_META.
+    def not_campaign(v: dict[str, str]) -> bool:
+        return v["mode"] != "campaign"
+
+    for field_name, meta in CONFIG_FIELD_META.items():
+        if not meta.menu_visible:
+            continue
+        options.append(
+            MenuOption(
+                key=f"cfg_{field_name}",
+                label=meta.label,
+                description=meta.description,
+                choices=list(meta.choices),
+                default_index=meta.default_choice,
+                visible_when=not_campaign,
+            )
+        )
 
     options.extend(
         [
-            MenuOption(
-                key="speed",
-                label="Unit Speed",
-                description="How fast units move. Higher = more aggressive games.",
-                choices=speed_choices,
-                default_index=speed_choices.index("2.0"),
-                visible_when=not_campaign,
-            ),
-            MenuOption(
-                key="production",
-                label="Production",
-                description="Ticks between producing a unit. Lower = faster economy.",
-                choices=["10 (fast)", "20", "30 (default)", "50 (slow)", "80 (glacial)"],
-                default_index=2,
-                visible_when=not_campaign,
-            ),
-            MenuOption(
-                key="attack_ratio",
-                label="Attack Ratio",
-                description="Damage per attacker. <1 = defenders advantage, >1 = attackers.",
-                choices=["0.5 (defenders)", "0.8", "1.0 (fair)", "1.5", "2.0 (attackers)"],
-                default_index=2,
-                visible_when=not_campaign,
-            ),
-            MenuOption(
-                key="max_sun_level",
-                label="Max Sun Level",
-                description="Maximum upgrade level for suns.",
-                choices=["1 (no upgrades)", "2", "3 (default)", "5"],
-                default_index=2,
-                visible_when=not_campaign,
-            ),
-            MenuOption(
-                key="capture_reset",
-                label="Capture Reset",
-                description="What level a sun resets to when captured.",
-                choices=["1 (default)", "keep level"],
-                default_index=0,
-                visible_when=not_campaign,
-            ),
-            MenuOption(
-                key="max_ticks",
-                label="Max Ticks",
-                description="Game ends in a draw after this many ticks. 0 = no limit.",
-                choices=["10000", "30000 (default)", "60000", "0 (no limit)"],
-                default_index=1,
-                visible_when=not_campaign,
-            ),
             MenuOption(
                 key="campaign_start",
                 label="Campaign Start",
@@ -346,7 +360,6 @@ def _run_gui_menu() -> None:
 
     mode = result["mode"]
     map_name = result["map"]
-    speed = float(result["speed"])
 
     # Determine player count and collect bot names.
     if map_name in MAP_PLAYER_COUNTS:
@@ -358,32 +371,8 @@ def _run_gui_menu() -> None:
 
     bot_names = [result[f"bot{i + 1}"] for i in range(num_players)]
 
-    # Parse config from menu values.
-    speed = float(result["speed"])
-    production = _parse_num(result.get("production", "30"), 30)
-    attack_ratio = _parse_num(result.get("attack_ratio", "1.0"), 1.0)
-    max_sun_level = int(_parse_num(result.get("max_sun_level", "3"), 3))
-    max_ticks_val = _parse_num(result.get("max_ticks", "30000"), 30000)
-    capture_reset_str = result.get("capture_reset", "1")
-    capture_level_reset: int | None = None if "keep" in capture_reset_str else 1
-
-    # Upgrade costs: extend if max_sun_level > 3.
-    base_costs = (20, 40)
-    if max_sun_level > len(base_costs) + 1:
-        extra = tuple(40 + 20 * i for i in range(max_sun_level - len(base_costs) - 1))
-        upgrade_costs = (*base_costs, *extra)
-    else:
-        upgrade_costs = base_costs
-
-    config = GameConfig(
-        unit_speed=speed,
-        production_interval=int(production),
-        attack_ratio=float(attack_ratio),
-        max_sun_level=int(max_sun_level),
-        capture_level_reset=capture_level_reset,
-        max_ticks=int(max_ticks_val) if max_ticks_val > 0 else None,
-        upgrade_costs=upgrade_costs,
-    )
+    # Build GameConfig from menu values using metadata.
+    config = _build_config_from_menu(result)
     if map_name.startswith("random:"):
         flavour = map_name.split(":", 1)[1]
         config = flavour_config(config, flavour)
@@ -395,8 +384,8 @@ def _run_gui_menu() -> None:
         campaign_start = int(campaign_start_str.split(".")[0])
         fake_args = argparse.Namespace(
             bot=[bot_names[0]],
-            max_ticks=30000,
-            speed=speed,
+            max_ticks=config.max_ticks or 30000,
+            speed=config.unit_speed,
             level=campaign_start,
             headless=False,
         )
