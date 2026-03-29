@@ -18,11 +18,12 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
-- **4 built-in bots** — passive, random, aggressive, expander (each with strategic intent narration)
+- **9 built-in bots** — passive, random, aggressive, expander, turtle, rush, sniper, opportunist, evolved (each with strategic intent narration)
+- **Evolutionary training** — train an evolved bot by running `clauralux train` to optimise 26 parameters against all other bots
 - **Themed random maps** — strategic, rush, chokepoint, swarm
 - **18-level campaign** — gradual difficulty progression from passive to dual-aggressive enemies
 - **Tournament system** — run N games and compare bot win rates
-- **GUI menu** — configure and launch games without touching the CLI
+- **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions
 - **Visual renderer** — pygame-ce with pulsing suns, unit swarms, trajectory lines, capture flashes
 
 ## Prerequisites
@@ -67,6 +68,12 @@ uv run clauralux campaign --bot expander
 
 # Campaign: start from level 10, headless
 uv run clauralux campaign --bot aggressive --level 10 --headless
+
+# Train the evolved bot (runs evolutionary optimisation)
+uv run clauralux train
+
+# Quick training run
+uv run clauralux train --population 20 --generations 20 --games-per-eval 10
 ```
 
 ### Visual Controls
@@ -108,8 +115,13 @@ src/clauralux/
         config.py   # All tunable parameters
         mapgen.py   # Themed random map generation
         campaign.py # 18-level campaign definitions
-    bots/           # Bot framework + built-in strategies
+    bots/           # Bot framework + 9 strategies
         base.py     # Abstract Bot class with intent narration
+        evolved.py  # Parameterized bot with 26 evolvable weights
+    training/       # Evolutionary training system
+        genome.py   # Parameter definitions and serialization
+        evolution.py # Selection, crossover, mutation
+        trainer.py  # Training loop with parallel evaluation
     renderer/       # Pygame visualization
         renderer.py # Game renderer
         menu.py     # Data-driven GUI menu
@@ -118,7 +130,7 @@ src/clauralux/
         visual.py   # Pygame display
         tournament.py # Multi-game comparison
     cli.py          # CLI + GUI entry point
-tests/              # 57 tests, ~60% coverage
+tests/              # 84 tests
 ```
 
 ## Development

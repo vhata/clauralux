@@ -23,7 +23,7 @@ An Auralux clone built as a bot strategy development platform. The game engine i
 ┌──────────────────────────────────────────────────┐
 │  Runner Layer (headless / visual / tournament)   │
 ├──────────────────────────────────────────────────┤
-│  Bot Layer (base class + 8 implementations)      │
+│  Bot Layer (base class + 9 implementations)      │
 ├──────────────────────────────────────────────────┤
 │  Engine Layer (pure logic, zero external deps)   │
 └──────────────────────────────────────────────────┘
@@ -60,6 +60,7 @@ An Auralux clone built as a bot strategy development platform. The game engine i
 | `rush.py` | Constant early pressure | Sends units every 20 ticks at the nearest target |
 | `sniper.py` | Eliminate players | Ignores neutrals, targets weakest player's weakest sun |
 | `opportunist.py` | Strike the weak | Scores targets by garrison+distance, pounces on low garrisons |
+| `evolved.py` | Learned strategy | 26 evolvable parameters trained via evolution against all other bots |
 
 ### Renderer (`src/clauralux/renderer/`) — Pygame-ce
 
@@ -76,6 +77,16 @@ An Auralux clone built as a bot strategy development platform. The game engine i
 | `headless.py` | `HeadlessRunner` — fast bot-vs-bot, returns `GameResult` |
 | `visual.py` | `VisualRunner` — pygame display, passes intents/speed/pause to renderer |
 | `tournament.py` | `run_tournament()` — N games, aggregates win rates |
+
+### Training (`src/clauralux/training/`)
+
+| File | What |
+|------|------|
+| `genome.py` | Parameter definitions (`ParamSpec`), ranges, JSON serialization |
+| `evolution.py` | Evolutionary operators: fitness evaluation, tournament selection, crossover, mutation |
+| `trainer.py` | Training loop orchestrator with `ProcessPoolExecutor` parallelism |
+
+The training system operates on raw `list[float]` genomes — it doesn't know whether the floats are heuristic weights or neural network parameters. This makes it reusable for future approaches (neuroevolution, etc.).
 
 ### CLI (`src/clauralux/cli.py`)
 
@@ -199,6 +210,21 @@ FLAVOURS = {
 
 It appears in the menu as `random:my_flavour` automatically.
 
+## How to Train the Evolved Bot
+
+```bash
+uv run clauralux train                    # full run (~10 min)
+uv run clauralux train --population 20 --generations 20  # quick test
+```
+
+The evolutionary loop:
+1. Initialises a population of random parameter vectors (seeding from existing weights if `data/evolved_weights.json` exists)
+2. Evaluates each candidate's win rate against all other bots across multiple maps
+3. Selects, crosses over, and mutates to produce the next generation
+4. Saves the all-time best to `data/evolved_weights.json` (only if it beats the prior best)
+
+Trained weights are loaded automatically by `EvolvedBot()`. If no weights file exists, it uses sensible defaults.
+
 ## Key Design Decisions
 
 - **Engine has zero deps.** Don't import pygame or anything external in `engine/`. This allows headless testing and fast simulation.
@@ -244,10 +270,10 @@ Visual controls: Space = pause, Up/Down = speed (2x steps, shown in HUD), Q = qu
 
 ## Stats
 
-- ~3200 lines of Python
-- 60 tests
-- 30 source files
-- 8 bot strategies
+- ~4300 lines of Python
+- 84 tests
+- 34 source files
+- 9 bot strategies (8 hand-crafted + 1 evolved)
 - 5 handcrafted maps + 4 random flavours
 - 18 campaign levels
 - 9 tunable config parameters exposed in menu
