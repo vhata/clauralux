@@ -62,7 +62,7 @@ class TrainingConfig:
     population_size: int = 50
     generations: int = 100
     games_per_eval: int = 20
-    workers: int = 4
+    workers: int = 0  # 0 = use all available CPUs
     elite_count: int = 5
     sigma_frac: float = 0.05
     sigma_decay: float = 0.995
@@ -130,67 +130,75 @@ def train(config: TrainingConfig) -> list[float]:
     best_ever: Individual | None = None
     sigma = config.sigma_frac
 
+    num_workers = config.workers or os.cpu_count() or 4
     print(
         f"Training: pop={config.population_size}, "
         f"gens={config.generations}, "
         f"games/eval={config.games_per_eval}, "
-        f"workers={config.workers}"
+        f"workers={num_workers}"
     )
     print(f"Output: {output_path}")
     print("=" * 60)
 
-    for gen in range(config.generations):
-        gen_start = time.monotonic()
+    executor = ProcessPoolExecutor(max_workers=num_workers) if num_workers > 1 else None
 
-        # Build evaluation tasks.
-        tasks = [(ind.genome, config.games_per_eval, rng.randint(0, 2**31)) for ind in population]
+    try:
+        for gen in range(config.generations):
+            gen_start = time.monotonic()
 
-        # Evaluate fitness in parallel.
-        if config.workers > 1:
-            with ProcessPoolExecutor(max_workers=config.workers) as executor:
+            # Build evaluation tasks.
+            tasks = [
+                (ind.genome, config.games_per_eval, rng.randint(0, 2**31)) for ind in population
+            ]
+
+            # Evaluate fitness in parallel.
+            if executor is not None:
                 fitnesses = list(executor.map(_evaluate_individual, tasks))
-        else:
-            fitnesses = [_evaluate_individual(t) for t in tasks]
+            else:
+                fitnesses = [_evaluate_individual(t) for t in tasks]
 
-        for ind, fit in zip(population, fitnesses, strict=True):
-            ind.fitness = fit
+            for ind, fit in zip(population, fitnesses, strict=True):
+                ind.fitness = fit
 
-        # Find generation best.
-        gen_best = max(population, key=lambda ind: ind.fitness)
-        avg_fitness = sum(ind.fitness for ind in population) / len(population)
+            # Find generation best.
+            gen_best = max(population, key=lambda ind: ind.fitness)
+            avg_fitness = sum(ind.fitness for ind in population) / len(population)
 
-        if best_ever is None or gen_best.fitness > best_ever.fitness:
-            best_ever = Individual(
-                genome=list(gen_best.genome),
-                fitness=gen_best.fitness,
+            if best_ever is None or gen_best.fitness > best_ever.fitness:
+                best_ever = Individual(
+                    genome=list(gen_best.genome),
+                    fitness=gen_best.fitness,
+                )
+                # Capture the prior best's evaluated fitness after gen 1.
+                if prior_best is not None and prior_best.fitness == 0.0:
+                    prior_best.fitness = population[0].fitness
+                # Only save if we actually beat whatever was on disk.
+                if prior_best is None or best_ever.fitness > prior_best.fitness:
+                    save_genome(best_ever.genome, output_path)
+
+            elapsed = time.monotonic() - gen_start
+
+            # Progress output.
+            print(
+                f"Gen {gen + 1:3d}/{config.generations} | "
+                f"best={gen_best.fitness:.3f} avg={avg_fitness:.3f} "
+                f"all-time={best_ever.fitness:.3f} | "
+                f"sigma={sigma:.4f} | "
+                f"{elapsed:.1f}s"
             )
-            # Capture the prior best's evaluated fitness after gen 1.
-            if prior_best is not None and prior_best.fitness == 0.0:
-                prior_best.fitness = population[0].fitness
-            # Only save if we actually beat whatever was on disk.
-            if prior_best is None or best_ever.fitness > prior_best.fitness:
-                save_genome(best_ever.genome, output_path)
 
-        elapsed = time.monotonic() - gen_start
-
-        # Progress output.
-        print(
-            f"Gen {gen + 1:3d}/{config.generations} | "
-            f"best={gen_best.fitness:.3f} avg={avg_fitness:.3f} "
-            f"all-time={best_ever.fitness:.3f} | "
-            f"sigma={sigma:.4f} | "
-            f"{elapsed:.1f}s"
-        )
-
-        # Create next generation.
-        population = create_next_generation(
-            population=population,
-            elite_count=config.elite_count,
-            sigma_frac=sigma,
-            mutation_prob=config.mutation_prob,
-            rng=rng,
-        )
-        sigma *= config.sigma_decay
+            # Create next generation.
+            population = create_next_generation(
+                population=population,
+                elite_count=config.elite_count,
+                sigma_frac=sigma,
+                mutation_prob=config.mutation_prob,
+                rng=rng,
+            )
+            sigma *= config.sigma_decay
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=False)
 
     # Final save and summary.
     assert best_ever is not None

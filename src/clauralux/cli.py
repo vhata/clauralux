@@ -246,8 +246,8 @@ def main() -> None:
     parser.add_argument(
         "--workers",
         type=int,
-        default=4,
-        help="Parallel workers for training (default: 4)",
+        default=0,
+        help="Parallel workers for training (0 = all CPUs, default: 0)",
     )
     parser.add_argument(
         "--output",
