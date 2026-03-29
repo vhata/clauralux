@@ -29,6 +29,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Prerequisites
 
 - Python 3.12+
+- Rust toolchain (install: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - uv (install: `curl -LsSf https://astral.sh/uv/install.sh | sh`)
 
 ## Quickstart
@@ -36,6 +37,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ```bash
 uv venv .venv
 uv sync --group dev --extra visual
+uv run maturin develop --release   # Build the Rust engine
 uv run pre-commit install
 
 # Launch the GUI menu
