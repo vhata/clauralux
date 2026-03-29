@@ -61,6 +61,8 @@ class TrainingConfig:
     self_play: bool = False  # only train against other evolved bots
     seed: int = 42
     hall_of_fame_interval: int = 5  # save best genome every N generations
+    stagnation_limit: int = 15  # reset sigma after N gens without improvement
+    stagnation_inject: float = 0.2  # fraction of population replaced with random on reset
 
 
 _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
@@ -165,6 +167,7 @@ def train(config: TrainingConfig) -> list[float]:
 
     best_ever: Individual | None = None
     sigma = config.sigma_frac
+    stagnation_count = 0
 
     # Hall of fame: best genomes from previous generations.
     # Starts with the prior best from disk (if any).
@@ -229,12 +232,15 @@ def train(config: TrainingConfig) -> list[float]:
                     genome=list(gen_best.genome),
                     fitness=gen_best.fitness,
                 )
+                stagnation_count = 0
                 # Capture the prior best's evaluated fitness after gen 1.
                 if prior_best is not None and prior_best.fitness == 0.0:
                     prior_best.fitness = population[0].fitness
                 # Only save if we actually beat whatever was on disk.
                 if prior_best is None or best_ever.fitness > prior_best.fitness:
                     save_genome(best_ever.genome, output_path)
+            else:
+                stagnation_count += 1
 
             # Add to hall of fame at regular intervals.
             if (gen + 1) % config.hall_of_fame_interval == 0:
@@ -261,6 +267,22 @@ def train(config: TrainingConfig) -> list[float]:
                 rng=rng,
             )
             sigma *= config.sigma_decay
+
+            # Stagnation reset: if no improvement for N generations,
+            # reset sigma and inject random individuals to escape local optima.
+            if stagnation_count >= config.stagnation_limit:
+                sigma = config.sigma_frac
+                num_inject = max(1, int(len(population) * config.stagnation_inject))
+                # Replace the worst individuals with fresh random genomes.
+                ranked = sorted(population, key=lambda ind: ind.fitness, reverse=True)
+                for i in range(num_inject):
+                    ranked[-(i + 1)] = Individual(genome=random_genome(rng))
+                population = ranked
+                stagnation_count = 0
+                print(
+                    f"  ** Stagnation reset: sigma→{sigma:.4f}, "
+                    f"injected {num_inject} random individuals"
+                )
     finally:
         if executor is not None:
             executor.shutdown(wait=False)
