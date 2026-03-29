@@ -161,9 +161,15 @@ class PygameRenderer:
         tick_surface = self._font.render(tick_text, True, TEXT_DIM)
         self._screen.blit(tick_surface, (PADDING, hud_y))
 
+        # Compute column layout based on player count.
+        num_players = len(state.players)
+        left_margin = 120
+        available_width = self._window_width - left_margin - PADDING
+        col_width = max(120, available_width // max(num_players, 1))
+
         # Player stats.
-        x_offset = 200
-        for player_id in state.players:
+        for i, player_id in enumerate(state.players):
+            x = left_margin + i * col_width
             color = get_color(player_id)
             suns_owned = sum(1 for s in state.suns.values() if s.owner == player_id)
             total_garrison = sum(
@@ -173,48 +179,44 @@ class PygameRenderer:
             eliminated = player_id in state.eliminated
 
             if eliminated:
-                label = f"P{player_id}: ELIMINATED"
+                label = f"P{player_id}: OUT"
             else:
-                label = f"P{player_id}: {suns_owned}suns {total_garrison}+{units_in_flight}units"
+                label = f"P{player_id}: {suns_owned}s {total_garrison}+{units_in_flight}u"
 
             label_surface = self._font.render(label, True, color)
-            self._screen.blit(label_surface, (x_offset, hud_y))
-            x_offset += 300
+            self._screen.blit(label_surface, (x, hud_y))
 
         # Garrison proportion bars.
-        bar_y = hud_y + 22
+        bar_y = hud_y + 20
         total_all = max(
             1,
             sum(int(s.garrison) for s in state.suns.values() if s.owner != NEUTRAL)
             + sum(g.count for g in state.unit_groups),
         )
-        bar_x = 200
-        bar_width = 250
-        for player_id in state.players:
+        bar_max_width = col_width - 10
+        for i, player_id in enumerate(state.players):
+            x = left_margin + i * col_width
             color = get_color(player_id)
             player_total = sum(
                 int(s.garrison) for s in state.suns.values() if s.owner == player_id
             ) + sum(g.count for g in state.unit_groups if g.owner == player_id)
-            fill = int(bar_width * player_total / total_all)
-            pygame.draw.rect(self._screen, (40, 40, 50), (bar_x, bar_y, bar_width, 6))
-            pygame.draw.rect(self._screen, color, (bar_x, bar_y, fill, 6))
-            bar_x += 300
+            fill = int(bar_max_width * player_total / total_all)
+            pygame.draw.rect(self._screen, (40, 40, 50), (x, bar_y, bar_max_width, 5))
+            pygame.draw.rect(self._screen, color, (x, bar_y, fill, 5))
 
         # Bot intents.
         if intents:
             intent_y = bar_y + 12
-            intent_x = 200
-            for player_id in state.players:
+            max_chars = max(10, col_width // 8)
+            for i, player_id in enumerate(state.players):
+                x = left_margin + i * col_width
                 color = get_color(player_id)
                 intent_text = intents.get(player_id, "")
                 if intent_text:
-                    # Truncate to fit column width.
-                    max_chars = 38
                     if len(intent_text) > max_chars:
                         intent_text = intent_text[: max_chars - 1] + "…"
-                    intent_surface = self._font.render(intent_text, True, (*color[:3],))
-                    self._screen.blit(intent_surface, (intent_x, intent_y))
-                intent_x += 300
+                    intent_surface = self._font.render(intent_text, True, color)
+                    self._screen.blit(intent_surface, (x, intent_y))
 
         # Winner banner.
         if state.winner is not None:
