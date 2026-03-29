@@ -133,8 +133,8 @@ def main() -> None:
         "command",
         nargs="?",
         default=None,
-        choices=["watch", "headless", "tournament", "campaign", "train"],
-        help="watch/headless/tournament/campaign/train. Omit for GUI menu.",
+        choices=["watch", "headless", "tournament", "campaign", "train", "replay"],
+        help="watch/headless/tournament/campaign/train/replay. Omit for GUI menu.",
     )
     parser.add_argument(
         "--bot",
@@ -225,6 +225,20 @@ def main() -> None:
         help="Train from scratch, ignoring existing weights",
     )
 
+    # Replay arguments.
+    parser.add_argument(
+        "--record",
+        default=None,
+        metavar="FILE",
+        help="Record the game to a replay JSON file",
+    )
+    parser.add_argument(
+        "replay_file",
+        nargs="?",
+        default=None,
+        help="Replay file to play back (for 'replay' command)",
+    )
+
     args = parser.parse_args()
 
     # No command given — launch GUI menu.
@@ -238,6 +252,10 @@ def main() -> None:
 
     if args.command == "train":
         _run_train(args)
+        return
+
+    if args.command == "replay":
+        _run_replay(args)
         return
 
     config = GameConfig(max_ticks=args.max_ticks, unit_speed=args.speed)
@@ -273,9 +291,9 @@ def main() -> None:
             sys.exit(1)
 
     if args.command == "watch":
-        _run_visual(config, map_name, bot_names, args.seed)
+        _run_visual(config, map_name, bot_names, args.seed, record_path=args.record)
     elif args.command == "headless":
-        _run_headless(config, map_name, bot_names, args.seed)
+        _run_headless(config, map_name, bot_names, args.seed, record_path=args.record)
     elif args.command == "tournament":
         _run_tournament(config, map_name, bot_names, args.games, args.seed)
 
@@ -478,28 +496,53 @@ def _make_state_and_bots(
     return state, bots
 
 
-def _run_visual(config: GameConfig, map_name: str, bot_names: list[str], seed: int | None) -> None:
+def _run_visual(
+    config: GameConfig,
+    map_name: str,
+    bot_names: list[str],
+    seed: int | None,
+    record_path: str | None = None,
+) -> None:
+    from clauralux.replay.recorder import GameRecorder, save_replay
     from clauralux.runner.visual import VisualRunner
 
     state, bots = _make_state_and_bots(config, map_name, bot_names, seed)
     bot_name_map = {PlayerId(i + 1): name for i, name in enumerate(bot_names)}
+    recorder = GameRecorder(config, state, bot_name_map) if record_path else None
     print(f"Watching: {' vs '.join(bot_names)} on {map_name}")
+    if record_path:
+        print(f"Recording to: {record_path}")
     print("Controls: Space=pause, Up/Down=speed, Q=quit")
-    runner = VisualRunner(config, state, bots, bot_names=bot_name_map)
+    runner = VisualRunner(config, state, bots, bot_names=bot_name_map, recorder=recorder)
     result = runner.run()
     _print_result(result, bot_names)
+    if recorder and record_path:
+        replay = recorder.finish(result.winner, result.ticks, result.is_draw)
+        save_replay(replay, record_path)
+        print(f"Replay saved to: {record_path}")
 
 
 def _run_headless(
-    config: GameConfig, map_name: str, bot_names: list[str], seed: int | None
+    config: GameConfig,
+    map_name: str,
+    bot_names: list[str],
+    seed: int | None,
+    record_path: str | None = None,
 ) -> None:
+    from clauralux.replay.recorder import GameRecorder, save_replay
     from clauralux.runner.headless import HeadlessRunner
 
     state, bots = _make_state_and_bots(config, map_name, bot_names, seed)
+    bot_name_map = {PlayerId(i + 1): name for i, name in enumerate(bot_names)}
+    recorder = GameRecorder(config, state, bot_name_map) if record_path else None
     print(f"Running: {' vs '.join(bot_names)} on {map_name}")
-    runner = HeadlessRunner(config, state, bots)
+    runner = HeadlessRunner(config, state, bots, recorder=recorder)
     result = runner.run()
     _print_result(result, bot_names)
+    if recorder and record_path:
+        replay = recorder.finish(result.winner, result.ticks, result.is_draw)
+        save_replay(replay, record_path)
+        print(f"Replay saved to: {record_path}")
 
 
 def _run_tournament(
@@ -601,6 +644,48 @@ def _run_train(args: argparse.Namespace) -> None:
         from_scratch=args.from_scratch,
     )
     train(config)
+
+
+def _run_replay(args: argparse.Namespace) -> None:
+    from clauralux.replay.recorder import load_replay, replay_to_game
+    from clauralux.replay.replay_bot import ReplayBot
+    from clauralux.runner.visual import VisualRunner
+
+    replay_file = args.replay_file
+    if not replay_file:
+        print("Usage: clauralux replay <file.json>")
+        sys.exit(1)
+
+    print(f"Loading replay: {replay_file}")
+    data = load_replay(replay_file)
+    config, state, schedule = replay_to_game(data)
+
+    # Build ReplayBot instances for each player.
+    bots: dict[PlayerId, Bot] = {}
+    bot_name_map: dict[PlayerId, str] = {}
+    for pid_str, name in data.bot_names.items():
+        pid = PlayerId(int(pid_str))
+        player_schedule = schedule.get(int(pid), [])
+        bots[pid] = ReplayBot(player_schedule, bot_name=name)
+        bot_name_map[pid] = name
+
+    # If bot_names is empty, infer from state.
+    if not bots:
+        for p in state.players:
+            pid = PlayerId(int(p))
+            player_schedule = schedule.get(int(pid), [])
+            bots[pid] = ReplayBot(player_schedule)
+            bot_name_map[pid] = "unknown"
+
+    result_info = data.result
+    print(f"Replaying: {' vs '.join(bot_name_map.values())}")
+    print(f"Original result: winner=P{result_info.get('winner')}, ticks={result_info.get('ticks')}")
+    print("Controls: Space=pause, Up/Down=speed, Q=quit")
+
+    runner = VisualRunner(config, state, bots, bot_names=bot_name_map)
+    result = runner.run()
+    bot_names_list = [bot_name_map.get(PlayerId(i + 1), "?") for i in range(len(bots))]
+    _print_result(result, bot_names_list)
 
 
 def _print_result(result: GameResult, bot_names: list[str]) -> None:

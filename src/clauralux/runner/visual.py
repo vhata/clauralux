@@ -10,6 +10,7 @@ from clauralux.engine.game import Game
 from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
 from clauralux.renderer.renderer import PygameRenderer
+from clauralux.replay.recorder import GameRecorder
 from clauralux.runner.headless import GameResult
 
 from .headless import NEUTRAL
@@ -24,11 +25,13 @@ class VisualRunner:
         initial_state: GameState,
         bots: Mapping[PlayerId, Bot],
         bot_names: Mapping[PlayerId, str] | None = None,
+        recorder: GameRecorder | None = None,
     ) -> None:
         self._config = config
         self._game = Game(config, initial_state)
         self._bots = bots
         self._bot_names: dict[PlayerId, str] = dict(bot_names) if bot_names else {}
+        self._recorder = recorder
         self._renderer = PygameRenderer(config)
         self._paused = False
         self._speed_multiplier = 1
@@ -69,6 +72,10 @@ class VisualRunner:
                             if player_id not in game.state.eliminated:
                                 view = game.get_view(player_id)
                                 actions = bot.decide(view)
+                                if self._recorder is not None:
+                                    self._recorder.record_actions(
+                                        game.state.tick, player_id, actions
+                                    )
                                 game.apply_actions(player_id, actions)
                     game.tick()
 

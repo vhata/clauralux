@@ -8,6 +8,7 @@ from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
 from clauralux.engine.state import GameState
 from clauralux.engine.types import NEUTRAL, PlayerId
+from clauralux.replay.recorder import GameRecorder
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,10 +29,12 @@ class HeadlessRunner:
         config: GameConfig,
         initial_state: GameState,
         bots: Mapping[PlayerId, Bot],
+        recorder: GameRecorder | None = None,
     ) -> None:
         self._config = config
         self._game = Game(config, initial_state)
         self._bots = bots
+        self._recorder = recorder
 
     @property
     def game(self) -> Game:
@@ -53,6 +56,8 @@ class HeadlessRunner:
                     if player_id not in game.state.eliminated:
                         view = game.get_view(player_id)
                         actions = bot.decide(view)
+                        if self._recorder is not None:
+                            self._recorder.record_actions(game.state.tick, player_id, actions)
                         game.apply_actions(player_id, actions)
             game.tick()
 
