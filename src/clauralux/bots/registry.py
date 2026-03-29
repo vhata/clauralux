@@ -65,3 +65,29 @@ _TRAINING_EXCLUDED: set[str] = {"passive", "evolved"}
 def training_opponents() -> list[type[Bot]]:
     """Return all bot classes that should be used as training opponents."""
     return [cls for name, cls in BOT_REGISTRY.items() if name not in _TRAINING_EXCLUDED]
+
+
+# Difficulty weights for training fitness — harder opponents count more.
+BOT_DIFFICULTY: dict[str, float] = {
+    "random": 0.5,
+    "aggressive": 0.8,
+    "rush": 0.8,
+    "swarm": 0.7,
+    "expander": 1.0,
+    "economic": 1.0,
+    "opportunist": 1.0,
+    "reactive": 1.1,
+    "turtle": 1.2,
+    "coordinator": 1.2,
+    "sniper": 1.3,
+    "baiter": 1.3,
+}
+
+
+def training_opponents_with_weights() -> list[tuple[type[Bot], float]]:
+    """Return bot classes and their difficulty weights for training."""
+    return [
+        (cls, BOT_DIFFICULTY.get(name, 1.0))
+        for name, cls in BOT_REGISTRY.items()
+        if name not in _TRAINING_EXCLUDED
+    ]

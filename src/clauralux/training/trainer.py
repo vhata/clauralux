@@ -20,7 +20,7 @@ from pathlib import Path
 from clauralux.bots.base import Bot
 from clauralux.bots.evolved import EvolvedBot
 from clauralux.bots.noisy import NoisyWrapper
-from clauralux.bots.registry import training_opponents
+from clauralux.bots.registry import training_opponents_with_weights
 from clauralux.engine.config import GameConfig
 from clauralux.engine.mapgen import FLAVOURS, generate_map
 from clauralux.engine.maps import two_player_simple
@@ -41,16 +41,16 @@ from .genome import (
 )
 
 # Opponent pool is derived from the central registry, excluding passive and evolved.
-OPPONENT_BOTS: list[type[Bot]] = training_opponents()
+OPPONENT_BOTS_WITH_WEIGHTS: list[tuple[type[Bot], float]] = training_opponents_with_weights()
 
 
 @dataclass(frozen=True, slots=True)
 class TrainingConfig:
     """Configuration for an evolutionary training run."""
 
-    population_size: int = 50
-    generations: int = 100
-    games_per_eval: int = 20
+    population_size: int = 80
+    generations: int = 200
+    games_per_eval: int = 40
     workers: int = 0  # 0 = use all available CPUs
     elite_count: int = 5
     sigma_frac: float = 0.05
@@ -59,7 +59,7 @@ class TrainingConfig:
     output_path: str = "data/evolved_weights.json"
     from_scratch: bool = False
     seed: int = 42
-    hall_of_fame_interval: int = 10  # save best genome every N generations
+    hall_of_fame_interval: int = 5  # save best genome every N generations
 
 
 _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
@@ -85,9 +85,12 @@ def _evaluate_individual(
 
         return factory
 
-    opponents: list[Callable[[PlayerId], Bot]] = [
-        _make_opponent(cls, rng_seed + i) for i, cls in enumerate(OPPONENT_BOTS)
-    ]
+    opponents: list[Callable[[PlayerId], Bot]] = []
+    opponent_weights: list[float] = []
+    for i, (cls, weight) in enumerate(OPPONENT_BOTS_WITH_WEIGHTS):
+        opponents.append(_make_opponent(cls, rng_seed + i))
+        opponent_weights.append(weight)
+
     # Play against hall-of-fame evolved bots (previous best genomes).
     for hof_genome in hall_of_fame:
         g = hof_genome  # capture for closure
@@ -96,6 +99,7 @@ def _evaluate_individual(
             return EvolvedBot(genome=g)
 
         opponents.append(_hof_factory)
+        opponent_weights.append(1.0)
 
     # Use all map flavours plus the fixed map, with seed variation.
     def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
@@ -116,6 +120,7 @@ def _evaluate_individual(
         config=config,
         games_per_eval=games_per_eval,
         rng_seed=rng_seed,
+        opponent_weights=opponent_weights,
     )
 
 

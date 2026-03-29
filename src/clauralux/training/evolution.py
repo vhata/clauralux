@@ -69,21 +69,28 @@ def evaluate_fitness(
     config: GameConfig,
     games_per_eval: int,
     rng_seed: int | None = None,
+    opponent_weights: Sequence[float] | None = None,
 ) -> float:
     """Evaluate a bot's fitness by playing games against various opponents.
 
     Returns a score where higher is better. Uses a richer signal than plain
     win/loss: rewards decisive victories and territorial control.
+
+    If opponent_weights is provided, each opponent's game score is multiplied
+    by its weight, producing a weighted average that rewards beating harder bots.
     """
     if not opponents or not maps:
         return 0.0
 
+    weights = opponent_weights or [1.0] * len(opponents)
     max_ticks = config.max_ticks or 10_000
     total_score = 0.0
-    games_played = 0
+    total_weight = 0.0
 
     for i in range(games_per_eval):
-        opponent = opponents[i % len(opponents)]
+        opponent_idx = i % len(opponents)
+        opponent = opponents[opponent_idx]
+        weight = weights[opponent_idx]
         map_factory = maps[i % len(maps)]
 
         state = map_factory(config)
@@ -94,11 +101,11 @@ def evaluate_fitness(
         }
         runner = HeadlessRunner(config, state, bots)
         result = runner.run()
-        games_played += 1
 
-        total_score += _score_game(result, runner.game.state, my_id, max_ticks)
+        total_score += weight * _score_game(result, runner.game.state, my_id, max_ticks)
+        total_weight += weight
 
-    return total_score / max(games_played, 1)
+    return total_score / max(total_weight, 1.0)
 
 
 def tournament_select(

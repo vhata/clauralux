@@ -193,20 +193,20 @@ def main() -> None:
     parser.add_argument(
         "--population",
         type=int,
-        default=50,
-        help="Population size for training (default: 50)",
+        default=80,
+        help="Population size for training (default: 80)",
     )
     parser.add_argument(
         "--generations",
         type=int,
-        default=100,
-        help="Number of generations for training (default: 100)",
+        default=200,
+        help="Number of generations for training (default: 200)",
     )
     parser.add_argument(
         "--games-per-eval",
         type=int,
-        default=20,
-        help="Games per fitness evaluation (default: 20)",
+        default=40,
+        help="Games per fitness evaluation (default: 40)",
     )
     parser.add_argument(
         "--workers",
