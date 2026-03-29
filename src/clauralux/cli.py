@@ -6,16 +6,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from clauralux.bots.aggressive import AggressiveBot
 from clauralux.bots.base import Bot
-from clauralux.bots.evolved import EvolvedBot
-from clauralux.bots.expander import ExpanderBot
-from clauralux.bots.opportunist import OpportunistBot
-from clauralux.bots.passive import PassiveBot
-from clauralux.bots.random_bot import RandomBot
-from clauralux.bots.rush import RushBot
-from clauralux.bots.sniper import SniperBot
-from clauralux.bots.turtle import TurtleBot
+from clauralux.bots.registry import BOT_DESCRIPTIONS, BOT_REGISTRY
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
 from clauralux.engine.config import CONFIG_FIELD_META, GameConfig
 from clauralux.engine.mapgen import FLAVOURS, flavour_config, generate_map
@@ -32,30 +24,6 @@ from clauralux.renderer.menu import MenuOption
 from clauralux.runner.headless import GameResult
 
 MapFactory = Callable[[GameConfig], GameState]
-
-BOT_REGISTRY: dict[str, type[Bot]] = {
-    "passive": PassiveBot,
-    "random": RandomBot,
-    "aggressive": AggressiveBot,
-    "expander": ExpanderBot,
-    "turtle": TurtleBot,
-    "rush": RushBot,
-    "sniper": SniperBot,
-    "opportunist": OpportunistBot,
-    "evolved": EvolvedBot,
-}
-
-BOT_DESCRIPTIONS: dict[str, str] = {
-    "passive": "Does nothing. Just sits there.",
-    "random": "Picks actions by dice roll. Chaotic and bad.",
-    "aggressive": "Waits until it can overwhelm the weakest target, then sends everything.",
-    "expander": "Grabs neutrals first, upgrades economy, attacks enemies last.",
-    "turtle": "Upgrades all suns to max, builds huge garrisons, then crushes.",
-    "rush": "Constant early pressure — sends units every 20 ticks at the nearest target.",
-    "sniper": "Ignores neutrals. Targets the weakest player's weakest sun to eliminate them.",
-    "opportunist": "Watches for low garrisons and pounces. Upgrades when nothing's weak enough.",
-    "evolved": "Evolved strategy — trained by playing thousands of games against all other bots.",
-}
 
 MAP_REGISTRY: dict[str, MapFactory] = {
     "2p": two_player_simple,

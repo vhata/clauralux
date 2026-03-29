@@ -17,15 +17,9 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 from dataclasses import dataclass
 from pathlib import Path
 
-from clauralux.bots.aggressive import AggressiveBot
 from clauralux.bots.base import Bot
 from clauralux.bots.evolved import EvolvedBot
-from clauralux.bots.expander import ExpanderBot
-from clauralux.bots.opportunist import OpportunistBot
-from clauralux.bots.random_bot import RandomBot
-from clauralux.bots.rush import RushBot
-from clauralux.bots.sniper import SniperBot
-from clauralux.bots.turtle import TurtleBot
+from clauralux.bots.registry import training_opponents
 from clauralux.engine.config import GameConfig
 from clauralux.engine.mapgen import generate_map
 from clauralux.engine.maps import two_player_simple
@@ -44,16 +38,8 @@ from .genome import (
     save_genome,
 )
 
-# All opponent bot classes for fitness evaluation.
-OPPONENT_BOTS: list[type[Bot]] = [
-    AggressiveBot,
-    ExpanderBot,
-    OpportunistBot,
-    RandomBot,
-    RushBot,
-    SniperBot,
-    TurtleBot,
-]
+# Opponent pool is derived from the central registry, excluding passive and evolved.
+OPPONENT_BOTS: list[type[Bot]] = training_opponents()
 
 
 @dataclass(frozen=True, slots=True)
