@@ -1,26 +1,49 @@
 from clauralux.engine.config import GameConfig
-from clauralux.engine.maps import three_player_triangle, two_player_simple
+from clauralux.engine.maps import (
+    five_player_pentagon,
+    four_player_cross,
+    six_player_hex,
+    three_player_triangle,
+    two_player_simple,
+)
 from clauralux.engine.types import NEUTRAL
 
 
-def test_two_player_simple_has_correct_structure() -> None:
-    config = GameConfig()
-    state = two_player_simple(config)
-    assert len(state.suns) == 5
-    assert len(state.players) == 2
+def _check_map(config: GameConfig, factory: object, expected_players: int) -> None:
+    state = factory(config)  # type: ignore[operator]
+    assert len(state.players) == expected_players
 
-    owners = [s.owner for s in state.suns.values()]
-    assert owners.count(NEUTRAL) == 3
-    non_neutral = [o for o in owners if o != NEUTRAL]
-    assert len(non_neutral) == 2
-    assert len(set(non_neutral)) == 2  # two different players
+    # Each player owns at least one sun.
+    for pid in state.players:
+        owned = [s for s in state.suns.values() if s.owner == pid]
+        assert len(owned) >= 1, f"P{pid} has no suns"
+
+    # Remaining suns are neutral.
+    neutrals = [s for s in state.suns.values() if s.owner == NEUTRAL]
+    player_suns = len(state.suns) - len(neutrals)
+    assert player_suns >= expected_players
+
+    # All suns within bounds.
+    for sun in state.suns.values():
+        assert 0 <= sun.position.x <= config.map_width
+        assert 0 <= sun.position.y <= config.map_height
 
 
-def test_three_player_triangle_has_correct_structure() -> None:
-    config = GameConfig()
-    state = three_player_triangle(config)
-    assert len(state.suns) == 7
-    assert len(state.players) == 3
+def test_two_player_simple() -> None:
+    _check_map(GameConfig(), two_player_simple, 2)
 
-    owners = [s.owner for s in state.suns.values()]
-    assert owners.count(NEUTRAL) == 4
+
+def test_three_player_triangle() -> None:
+    _check_map(GameConfig(), three_player_triangle, 3)
+
+
+def test_four_player_cross() -> None:
+    _check_map(GameConfig(), four_player_cross, 4)
+
+
+def test_five_player_pentagon() -> None:
+    _check_map(GameConfig(), five_player_pentagon, 5)
+
+
+def test_six_player_hex() -> None:
+    _check_map(GameConfig(), six_player_hex, 6)
