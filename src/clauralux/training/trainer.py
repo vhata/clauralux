@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import random
 import time
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 
 # Suppress pygame's startup banner in worker processes.
@@ -72,19 +73,33 @@ class TrainingConfig:
     seed: int = 42
 
 
-def _evaluate_individual(args: tuple[list[float], int, int]) -> float:
+def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None]) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
-    Args is a tuple of (genome, games_per_eval, rng_seed) to be picklable.
+    Args is a tuple of (genome, games_per_eval, rng_seed, prior_best_genome).
     """
-    genome, games_per_eval, rng_seed = args
+    genome, games_per_eval, rng_seed, prior_best = args
 
     config = GameConfig(max_ticks=10_000)
 
     def bot_factory(pid: PlayerId) -> Bot:
         return EvolvedBot(genome=genome)
 
-    opponents = [lambda pid, cls=cls: cls() for cls in OPPONENT_BOTS]
+    def _make_opponent(cls: type[Bot]) -> Callable[[PlayerId], Bot]:
+        def factory(pid: PlayerId) -> Bot:
+            return cls()
+
+        return factory
+
+    opponents = [_make_opponent(cls) for cls in OPPONENT_BOTS]
+    # Also play against the previous best evolved bot, if available.
+    if prior_best is not None:
+        prior_genome = prior_best
+
+        def _prior_factory(pid: PlayerId) -> Bot:
+            return EvolvedBot(genome=prior_genome)
+
+        opponents.append(_prior_factory)
 
     maps = [
         two_player_simple,
@@ -147,8 +162,14 @@ def train(config: TrainingConfig) -> list[float]:
             gen_start = time.monotonic()
 
             # Build evaluation tasks.
+            prior_genome = (
+                best_ever.genome
+                if best_ever is not None
+                else (prior_best.genome if prior_best is not None else None)
+            )
             tasks = [
-                (ind.genome, config.games_per_eval, rng.randint(0, 2**31)) for ind in population
+                (ind.genome, config.games_per_eval, rng.randint(0, 2**31), prior_genome)
+                for ind in population
             ]
 
             # Evaluate fitness in parallel.
