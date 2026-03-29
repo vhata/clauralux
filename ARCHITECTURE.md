@@ -272,7 +272,7 @@ Visual controls: Space = pause, Up/Down = speed (2x steps, shown in HUD), Q = qu
 
 - ~4300 lines of Python
 - 84 tests
-- 34 source files
+- 35 source files
 - 9 bot strategies (8 hand-crafted + 1 evolved)
 - 5 handcrafted maps + 4 random flavours
 - 18 campaign levels

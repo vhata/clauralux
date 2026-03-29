@@ -23,8 +23,8 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Themed random maps** — strategic, rush, chokepoint, swarm
 - **18-level campaign** — gradual difficulty progression from passive to dual-aggressive enemies
 - **Tournament system** — run N games and compare bot win rates
-- **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions
-- **Visual renderer** — pygame-ce with pulsing suns, unit swarms, trajectory lines, capture flashes
+- **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions and settings persistence
+- **Visual renderer** — pygame-ce with pulsing suns, unit swarms, trajectory lines, capture flashes, and detailed pause overlay
 
 ## Prerequisites
 
@@ -74,11 +74,14 @@ uv run clauralux train
 
 # Quick training run
 uv run clauralux train --population 20 --generations 20 --games-per-eval 10
+
+# Train from scratch (ignore existing weights)
+uv run clauralux train --from-scratch
 ```
 
 ### Visual Controls
 
-- **Space** — pause/unpause
+- **Space** — pause/unpause (shows detailed player status overlay when paused)
 - **Up/Down arrows** — speed up/slow down (2x increments)
 - **Q/Escape** — quit
 

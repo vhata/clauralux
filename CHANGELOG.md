@@ -10,5 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Evolved bot: parameterized heuristic bot with 26 evolvable parameters
 - Evolutionary training harness (`clauralux train`) with parallel fitness evaluation
+- `--from-scratch` flag for training from a clean slate
 - Genome serialization (JSON) for saving/loading trained weights
+- Bot strategy descriptions shown in GUI menu when selecting bots
+- Bot type names displayed in game HUD (e.g. "P1 (evolved)")
+- Detailed status overlay when pausing a game (Space key)
+- Menu scrolling when options overflow the screen
+- Settings persistence across sessions (`~/.config/clauralux/settings.json`)
 - Initial project setup
