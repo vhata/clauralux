@@ -217,11 +217,50 @@ uv run clauralux train                    # full run (~10 min)
 uv run clauralux train --population 20 --generations 20  # quick test
 ```
 
-The evolutionary loop:
-1. Initialises a population of random parameter vectors (seeding from existing weights if `data/evolved_weights.json` exists)
-2. Evaluates each candidate's win rate against all other bots across multiple maps
-3. Selects, crosses over, and mutates to produce the next generation
-4. Saves the all-time best to `data/evolved_weights.json` (only if it beats the prior best)
+### What the bot actually is
+
+The `EvolvedBot` is a parameterized heuristic bot — the same kind of if/then decision logic as the hand-crafted bots, but with 26 floating-point parameters controlling every threshold and weight. These parameters cover:
+
+- **Target scoring** — how much to weight garrison size, distance, sun level, neutral vs enemy preference, and whether friendly units are already heading there
+- **Force commitment** — how many units to keep in reserve, what force ratio is needed before attacking, what fraction to send, whether to concentrate from one sun or split from all
+- **Economy** — when to upgrade, how much to prefer upgrading over attacking, how long to focus on economy at the start
+- **Timing** — how often to make decisions, how aggressive to be early, how patient to be overall
+- **Coordination** — when to reinforce weak suns, how to weigh nearest vs average distance
+- **Threat response** — how much to react to incoming enemy units
+
+Different parameter values produce radically different play styles. `w_neutral_bonus = 3.0` makes an expander; `upgrade_vs_attack = 0.95` makes a turtle; `act_interval = 15` with `min_force_ratio = 0.8` makes a rusher.
+
+### How the fitness signal works
+
+Each candidate genome is evaluated by playing it (as Player 1) against the 7 non-passive hand-crafted bots across 3 maps (2p fixed, random:strategic, random:rush). It plays `games_per_eval` games total, cycling through opponents and maps. The fitness score is:
+
+```
+fitness = (wins + 0.3 * draws) / total_games
+```
+
+A perfect score of 1.0 means it won every game. Draws are worth 0.3 to mildly reward survival without incentivising passive play. Games are capped at 10,000 ticks to penalise stalemates.
+
+### How evolution improves it
+
+The training loop uses a standard evolutionary algorithm:
+
+1. **Initialise** — 50 candidates: one seeded from existing weights (or defaults), the rest random
+2. **Evaluate** — run each candidate's games in parallel (`ProcessPoolExecutor`), compute fitness
+3. **Select** — tournament selection (pick 3 random candidates, keep the fittest) to choose parents
+4. **Crossover** — for each gene, randomly pick from parent A or parent B (uniform crossover)
+5. **Mutate** — each gene has a 20% chance of Gaussian noise (sigma = 5% of the parameter's range)
+6. **Elitism** — the top 5 candidates survive unchanged into the next generation
+7. **Repeat** — mutation sigma decays by 0.5% each generation, narrowing the search over time
+
+The key insight: evolution doesn't need gradients or a differentiable model. It just needs a fitness score and a way to combine and vary candidates. This is why the same training harness can later be used for neural network weights — the algorithm doesn't care what the floats mean.
+
+### Why it might not beat every bot
+
+The fitness signal averages across all opponents. A candidate that beats random/passive/rush 100% of the time but loses to opportunist 50% still scores ~0.85 — which may be higher than a specialist that beats opportunist but struggles elsewhere. This can lead to generalist strategies that plateau. Possible improvements:
+- Increase `games_per_eval` for a less noisy signal
+- Weight harder opponents more heavily in the fitness score
+- Run more generations with larger populations
+- Graduate to a neural network brain for more expressive strategies
 
 Trained weights are loaded automatically by `EvolvedBot()`. If no weights file exists, it uses sensible defaults.
 
