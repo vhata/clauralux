@@ -6,7 +6,7 @@ import pygame
 
 from clauralux.engine.config import GameConfig
 from clauralux.engine.state import GameState
-from clauralux.engine.types import NEUTRAL
+from clauralux.engine.types import NEUTRAL, PlayerId, SunId
 
 from .colors import BACKGROUND, TEXT, TEXT_DIM, get_bright_color, get_color
 
@@ -32,6 +32,10 @@ class PygameRenderer:
         self._font_large = pygame.font.SysFont("monospace", 18, bold=True)
         self._clock = pygame.time.Clock()
 
+        # State for capture flash animations.
+        self._prev_owners: dict[SunId, PlayerId] = {}
+        self._flash_events: list[tuple[int, int, int, tuple[int, int, int]]] = []
+
     def close(self) -> None:
         pygame.quit()
 
@@ -41,9 +45,11 @@ class PygameRenderer:
 
     def draw(self, state: GameState) -> None:
         """Draw the full game state."""
+        self._update_flash_events(state)
         self._screen.fill(BACKGROUND)
         self._draw_trajectories(state)
         self._draw_unit_groups(state)
+        self._draw_flash_events()
         self._draw_suns(state)
         self._draw_hud(state)
         pygame.display.flip()
@@ -97,10 +103,16 @@ class PygameRenderer:
             base_radius = 18
             radius = base_radius + (sun.level - 1) * 6
 
-            # Outer glow.
-            glow_radius = radius + 8
+            # Outer glow — pulses for owned suns, static for neutral.
+            if sun.owner != NEUTRAL:
+                pulse = 0.5 + 0.5 * math.sin(state.tick * 0.05 + sun.id * 1.7)
+                glow_radius = radius + 6 + int(pulse * 4)
+                glow_alpha = 30 + int(pulse * 25)
+            else:
+                glow_radius = radius + 8
+                glow_alpha = 40
             glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
-            glow_color = (*color, 40)
+            glow_color = (*color, glow_alpha)
             pygame.draw.circle(glow_surface, glow_color, (glow_radius, glow_radius), glow_radius)
             self._screen.blit(glow_surface, (sx - glow_radius, sy - glow_radius))
 
@@ -169,9 +181,52 @@ class PygameRenderer:
             self._screen.blit(label_surface, (x_offset, hud_y))
             x_offset += 300
 
+        # Garrison proportion bars.
+        bar_y = hud_y + 22
+        total_all = max(
+            1,
+            sum(int(s.garrison) for s in state.suns.values() if s.owner != NEUTRAL)
+            + sum(g.count for g in state.unit_groups),
+        )
+        bar_x = 200
+        bar_width = 250
+        for player_id in state.players:
+            color = get_color(player_id)
+            player_total = sum(
+                int(s.garrison) for s in state.suns.values() if s.owner == player_id
+            ) + sum(g.count for g in state.unit_groups if g.owner == player_id)
+            fill = int(bar_width * player_total / total_all)
+            pygame.draw.rect(self._screen, (40, 40, 50), (bar_x, bar_y, bar_width, 6))
+            pygame.draw.rect(self._screen, color, (bar_x, bar_y, fill, 6))
+            bar_x += 300
+
         # Winner banner.
         if state.winner is not None:
             banner = "DRAW!" if state.winner == NEUTRAL else f"PLAYER {state.winner} WINS!"
             banner_surface = self._font_large.render(banner, True, TEXT)
             banner_rect = banner_surface.get_rect(center=(self._window_width // 2, hud_y + 35))
             self._screen.blit(banner_surface, banner_rect)
+
+    def _update_flash_events(self, state: GameState) -> None:
+        """Detect ownership changes and spawn flash animations."""
+        for sun_id, sun in state.suns.items():
+            prev = self._prev_owners.get(sun_id)
+            if prev is not None and prev != sun.owner:
+                sx, sy = self.map_to_screen(sun.position.x, sun.position.y)
+                color = get_bright_color(sun.owner)
+                self._flash_events.append((sx, sy, 20, color))  # 20 frames
+            self._prev_owners[sun_id] = sun.owner
+
+    def _draw_flash_events(self) -> None:
+        """Draw and decay capture flash animations."""
+        remaining: list[tuple[int, int, int, tuple[int, int, int]]] = []
+        for sx, sy, frames_left, color in self._flash_events:
+            alpha = int(255 * frames_left / 20)
+            radius = 30 + (20 - frames_left) * 3
+            flash_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            flash_color = (*color, alpha)
+            pygame.draw.circle(flash_surface, flash_color, (radius, radius), radius, 3)
+            self._screen.blit(flash_surface, (sx - radius, sy - radius))
+            if frames_left > 1:
+                remaining.append((sx, sy, frames_left - 1, color))
+        self._flash_events = remaining
