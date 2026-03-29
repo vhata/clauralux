@@ -71,7 +71,10 @@ class VisualRunner:
                     game.tick()
 
             # Draw with bot intents, speed, and pause state.
-            intents = {pid: bot.intent for pid, bot in self._bots.items()}
+            intents = {
+                pid: "💀" if pid in game.state.eliminated else bot.intent
+                for pid, bot in self._bots.items()
+            }
             renderer.draw(
                 game.state,
                 intents,
