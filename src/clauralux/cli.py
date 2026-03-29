@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from clauralux.bots.aggressive import AggressiveBot
 from clauralux.bots.base import Bot
+from clauralux.bots.evolved import EvolvedBot
 from clauralux.bots.expander import ExpanderBot
 from clauralux.bots.opportunist import OpportunistBot
 from clauralux.bots.passive import PassiveBot
@@ -40,6 +41,7 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
     "rush": RushBot,
     "sniper": SniperBot,
     "opportunist": OpportunistBot,
+    "evolved": EvolvedBot,
 }
 
 MAP_REGISTRY: dict[str, MapFactory] = {
@@ -132,8 +134,8 @@ def main() -> None:
         "command",
         nargs="?",
         default=None,
-        choices=["watch", "headless", "tournament", "campaign"],
-        help="watch/headless/tournament/campaign. Omit for GUI menu.",
+        choices=["watch", "headless", "tournament", "campaign", "train"],
+        help="watch/headless/tournament/campaign/train. Omit for GUI menu.",
     )
     parser.add_argument(
         "--bot",
@@ -188,6 +190,37 @@ def main() -> None:
         help="Run campaign in headless mode",
     )
 
+    # Training arguments.
+    parser.add_argument(
+        "--population",
+        type=int,
+        default=50,
+        help="Population size for training (default: 50)",
+    )
+    parser.add_argument(
+        "--generations",
+        type=int,
+        default=100,
+        help="Number of generations for training (default: 100)",
+    )
+    parser.add_argument(
+        "--games-per-eval",
+        type=int,
+        default=20,
+        help="Games per fitness evaluation (default: 20)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Parallel workers for training (default: 4)",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/evolved_weights.json",
+        help="Output path for trained weights (default: data/evolved_weights.json)",
+    )
+
     args = parser.parse_args()
 
     # No command given — launch GUI menu.
@@ -197,6 +230,10 @@ def main() -> None:
 
     if args.command == "campaign":
         _run_campaign(args)
+        return
+
+    if args.command == "train":
+        _run_train(args)
         return
 
     config = GameConfig(max_ticks=args.max_ticks, unit_speed=args.speed)
@@ -522,6 +559,19 @@ def _run_campaign(args: argparse.Namespace) -> None:
     else:
         print(f"\n{'─' * 50}")
         print("CAMPAIGN COMPLETE!")
+
+
+def _run_train(args: argparse.Namespace) -> None:
+    from clauralux.training.trainer import TrainingConfig, train
+
+    config = TrainingConfig(
+        population_size=args.population,
+        generations=args.generations,
+        games_per_eval=args.games_per_eval,
+        workers=args.workers,
+        output_path=args.output,
+    )
+    train(config)
 
 
 def _print_result(result: GameResult, bot_names: list[str]) -> None:

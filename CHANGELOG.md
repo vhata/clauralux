@@ -8,4 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Evolved bot: parameterized heuristic bot with 26 evolvable parameters
+- Evolutionary training harness (`clauralux train`) with parallel fitness evaluation
+- Genome serialization (JSON) for saving/loading trained weights
 - Initial project setup
