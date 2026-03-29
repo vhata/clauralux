@@ -7,14 +7,19 @@ and training opponent pool.
 from __future__ import annotations
 
 from clauralux.bots.aggressive import AggressiveBot
+from clauralux.bots.baiter import BaiterBot
 from clauralux.bots.base import Bot
+from clauralux.bots.coordinator import CoordinatorBot
+from clauralux.bots.economic import EconomicBot
 from clauralux.bots.evolved import EvolvedBot
 from clauralux.bots.expander import ExpanderBot
 from clauralux.bots.opportunist import OpportunistBot
 from clauralux.bots.passive import PassiveBot
 from clauralux.bots.random_bot import RandomBot
+from clauralux.bots.reactive import ReactiveBot
 from clauralux.bots.rush import RushBot
 from clauralux.bots.sniper import SniperBot
+from clauralux.bots.swarm import SwarmBot
 from clauralux.bots.turtle import TurtleBot
 
 # Every bot in the game. Add new bots here and they'll be available everywhere.
@@ -27,6 +32,11 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
     "rush": RushBot,
     "sniper": SniperBot,
     "opportunist": OpportunistBot,
+    "swarm": SwarmBot,
+    "coordinator": CoordinatorBot,
+    "reactive": ReactiveBot,
+    "economic": EconomicBot,
+    "baiter": BaiterBot,
     "evolved": EvolvedBot,
 }
 
@@ -39,6 +49,11 @@ BOT_DESCRIPTIONS: dict[str, str] = {
     "rush": "Constant early pressure — sends units every 20 ticks at the nearest target.",
     "sniper": "Ignores neutrals. Targets the weakest player's weakest sun to eliminate them.",
     "opportunist": "Watches for low garrisons and pounces. Upgrades when nothing's weak enough.",
+    "swarm": "Many small attacks from every sun. Death by a thousand cuts.",
+    "coordinator": "Accumulates, then strikes multiple targets simultaneously.",
+    "reactive": "Defensive — reinforces threatened suns, only attacks with overwhelming force.",
+    "economic": "Upgrades aggressively, then targets the opponent's highest-level suns.",
+    "baiter": "Sends small bait attacks to draw defenders, then hits the weakened suns.",
     "evolved": "Evolved strategy — trained by playing thousands of games against all other bots.",
 }
 
