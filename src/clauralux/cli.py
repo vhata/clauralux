@@ -133,8 +133,8 @@ def main() -> None:
         "command",
         nargs="?",
         default=None,
-        choices=["watch", "headless", "tournament", "campaign", "train", "replay"],
-        help="watch/headless/tournament/campaign/train/replay. Omit for GUI menu.",
+        choices=["watch", "headless", "tournament", "campaign", "train", "replay", "benchmark"],
+        help="watch/headless/tournament/campaign/train/replay/benchmark. Omit for GUI menu.",
     )
     parser.add_argument(
         "--bot",
@@ -230,6 +230,14 @@ def main() -> None:
         help="Train only against other evolved bots (no hand-crafted opponents)",
     )
 
+    # Benchmark arguments.
+    parser.add_argument(
+        "--benchmark-games",
+        type=int,
+        default=50,
+        help="Games per opponent for benchmark (default: 50)",
+    )
+
     # Replay arguments.
     parser.add_argument(
         "--record",
@@ -257,6 +265,10 @@ def main() -> None:
 
     if args.command == "train":
         _run_train(args)
+        return
+
+    if args.command == "benchmark":
+        _run_benchmark(args)
         return
 
     if args.command == "replay":
@@ -650,6 +662,88 @@ def _run_train(args: argparse.Namespace) -> None:
         self_play=args.self_play,
     )
     train(config)
+
+
+def _run_benchmark(args: argparse.Namespace) -> None:
+    from clauralux.bots.registry import BOT_REGISTRY
+    from clauralux.engine.mapgen import generate_map
+    from clauralux.runner.tournament import run_tournament
+
+    games_per_opponent = args.benchmark_games
+    config = GameConfig(max_ticks=10_000)
+
+    # Benchmark against every bot except passive and evolved itself.
+    opponents = [name for name in BOT_REGISTRY if name not in ("passive", "evolved")]
+
+    # Maps: fixed 2p + all random flavours.
+    map_factories: list[tuple[str, MapFactory]] = [("2p", two_player_simple)]
+    for flavour in FLAVOUR_NAMES:
+        fl = flavour
+
+        def _make_map_factory(f: str) -> MapFactory:
+            def factory(cfg: GameConfig) -> GameState:
+                return generate_map(cfg, f, 2)
+
+            return factory
+
+        map_factories.append((f"random:{fl}", _make_map_factory(fl)))
+
+    total_wins = 0
+    total_losses = 0
+    total_draws = 0
+    total_games = 0
+
+    print(f"Evolved Bot Benchmark ({games_per_opponent} games per opponent per map)")
+    print("=" * 60)
+
+    for opp_name in opponents:
+        opp_wins = 0
+        opp_losses = 0
+        opp_draws = 0
+        opp_games = 0
+
+        def _make_opp_factory(name: str) -> Callable[[PlayerId], Bot]:
+            def factory(_pid: PlayerId) -> Bot:
+                return make_bot(name)
+
+            return factory
+
+        for _map_label, map_factory in map_factories:
+            result = run_tournament(
+                config=config,
+                map_factory=map_factory,
+                bot_factories={
+                    PlayerId(1): _make_opp_factory("evolved"),
+                    PlayerId(2): _make_opp_factory(opp_name),
+                },
+                num_games=games_per_opponent,
+            )
+            w = result.wins.get(PlayerId(1), 0)
+            losses = result.wins.get(PlayerId(2), 0)
+            d = result.draws
+            opp_wins += w
+            opp_losses += losses
+            opp_draws += d
+            opp_games += result.total_games
+
+        win_pct = opp_wins / max(opp_games, 1) * 100
+        print(
+            f"  vs {opp_name:<14s}  "
+            f"{opp_wins:3d}W {opp_draws:3d}D {opp_losses:3d}L  "
+            f"({win_pct:5.1f}%)"
+        )
+
+        total_wins += opp_wins
+        total_losses += opp_losses
+        total_draws += opp_draws
+        total_games += opp_games
+
+    print("=" * 60)
+    overall_pct = total_wins / max(total_games, 1) * 100
+    print(
+        f"  Overall: {total_wins}W {total_draws}D {total_losses}L "
+        f"/ {total_games} games ({overall_pct:.1f}% win rate)"
+    )
 
 
 def _run_replay(args: argparse.Namespace) -> None:
