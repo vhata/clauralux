@@ -92,7 +92,7 @@ class Game:
         dx, dy = sun.position.direction_to(target.position)
         speed = self._config.unit_speed
 
-        self._state.unit_groups.append(
+        self._state.add_unit_group(
             UnitGroup(
                 owner=player_id,
                 count=actual_count,
@@ -187,7 +187,7 @@ class Game:
             owns_suns = any(s.owner == player_id for s in self._state.suns.values())
             has_groups = any(g.owner == player_id for g in self._state.unit_groups)
             if not owns_suns and not has_groups:
-                self._state.eliminated.add(player_id)
+                self._state.add_eliminated(player_id)
 
         active = [p for p in self._state.players if p not in self._state.eliminated]
 

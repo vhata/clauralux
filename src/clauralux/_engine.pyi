@@ -1,5 +1,7 @@
 """Type stubs for the Rust engine extension module."""
 
+from clauralux.engine.types import PlayerId, SunId, Tick
+
 class Position:
     x: float
     y: float
@@ -42,3 +44,58 @@ class GameConfig:
         seed: int | None = 42,
     ) -> None: ...
     def replace(self, **kwargs: object) -> GameConfig: ...
+
+class Sun:
+    id: SunId
+    position: Position
+    owner: PlayerId
+    level: int
+    garrison: float
+    production_ticks: int
+    def __init__(
+        self,
+        id: SunId,
+        position: Position,
+        owner: PlayerId = ...,
+        level: int = 1,
+        garrison: float = 0.0,
+        production_ticks: int = 0,
+    ) -> None: ...
+
+class UnitGroup:
+    owner: PlayerId
+    count: int
+    position: Position
+    target_sun_id: SunId
+    velocity_x: float
+    velocity_y: float
+    def __init__(
+        self,
+        owner: PlayerId,
+        count: int,
+        position: Position,
+        target_sun_id: SunId,
+        velocity_x: float = 0.0,
+        velocity_y: float = 0.0,
+    ) -> None: ...
+
+class GameState:
+    suns: dict[SunId, Sun]
+    unit_groups: list[UnitGroup]
+    players: list[PlayerId]
+    tick: Tick
+    winner: PlayerId | None
+    eliminated: set[PlayerId]
+    def __init__(
+        self,
+        suns: dict[SunId, Sun] | None = None,
+        unit_groups: list[UnitGroup] | None = None,
+        players: list[PlayerId] | None = None,
+        tick: Tick = ...,
+        winner: PlayerId | None = None,
+        eliminated: set[PlayerId] | None = None,
+    ) -> None: ...
+    def add_unit_group(self, group: UnitGroup) -> None: ...
+    def set_sun(self, id: SunId, sun: Sun) -> None: ...
+    def add_eliminated(self, player_id: PlayerId) -> None: ...
+    def get_sun(self, id: SunId) -> Sun | None: ...
