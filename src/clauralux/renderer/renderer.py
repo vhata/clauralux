@@ -269,9 +269,14 @@ class PygameRenderer:
 
         for i, pid in enumerate(state.players):
             x = start_x + i * panel_width
-            color = get_color(pid)
             bright = get_bright_color(pid)
+            # Dimmer version of bright for body text — still clearly that player's colour.
+            body_color = tuple(max(0, c - 40) for c in bright)
             eliminated = pid in state.eliminated
+
+            # Panel border in player colour.
+            panel_rect = pygame.Rect(x + 2, 55, panel_width - 4, self._window_height - 100)
+            pygame.draw.rect(self._screen, bright, panel_rect, 1)
 
             my_suns = [s for s in state.suns.values() if s.owner == pid]
             suns_owned = len(my_suns)
@@ -293,7 +298,7 @@ class PygameRenderer:
             bot_name = bot_names.get(pid, "???")
             intent = intents.get(pid, "")
 
-            # Draw panel.
+            # Draw panel content.
             y = 60
             line_h = 20
 
@@ -304,7 +309,7 @@ class PygameRenderer:
             y += line_h + 8
 
             if eliminated:
-                elim_surface = self._font.render("ELIMINATED", True, (180, 60, 60))
+                elim_surface = self._font.render("ELIMINATED", True, (255, 80, 80))
                 self._screen.blit(elim_surface, (x + 10, y))
                 y += line_h * 2
                 continue
@@ -315,12 +320,12 @@ class PygameRenderer:
                 f"Garrison: {total_garrison}",
                 f"In flight: {units_in_flight}",
                 f"Total units: {total_units}",
-                f"Production: {production_rate} per {cfg.production_interval} ticks",
+                f"Production: {production_rate} / {cfg.production_interval} ticks",
                 f"Incoming threats: {incoming_threats}",
             ]
 
             for line in lines:
-                line_surface = self._font.render(line, True, color)
+                line_surface = self._font.render(line, True, body_color)
                 self._screen.blit(line_surface, (x + 10, y))
                 y += line_h
 
@@ -331,7 +336,7 @@ class PygameRenderer:
             y += line_h
             for sun in sorted(my_suns, key=lambda s: -s.garrison):
                 sun_line = f"  #{sun.id}: lvl {sun.level}, garrison {int(sun.garrison)}"
-                sun_surface = self._font.render(sun_line, True, color)
+                sun_surface = self._font.render(sun_line, True, body_color)
                 self._screen.blit(sun_surface, (x + 10, y))
                 y += line_h
 
@@ -346,7 +351,7 @@ class PygameRenderer:
                 while intent:
                     chunk = intent[:max_chars]
                     intent = intent[max_chars:]
-                    intent_surface = self._font.render(f"  {chunk}", True, color)
+                    intent_surface = self._font.render(f"  {chunk}", True, bright)
                     self._screen.blit(intent_surface, (x + 10, y))
                     y += line_h
 
