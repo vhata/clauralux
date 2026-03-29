@@ -31,9 +31,9 @@ def test_all_levels_produce_valid_state() -> None:
 def test_all_bot_names_are_valid() -> None:
     for i, level in enumerate(CAMPAIGN_LEVELS):
         for _pid, bot_name in level.enemy_bots.items():
-            assert (
-                bot_name in VALID_BOT_NAMES
-            ), f"Level {i + 1} ({level.name}): unknown bot '{bot_name}'"
+            assert bot_name in VALID_BOT_NAMES, (
+                f"Level {i + 1} ({level.name}): unknown bot '{bot_name}'"
+            )
 
 
 def test_enemy_bots_match_non_p1_players() -> None:
@@ -48,9 +48,9 @@ def test_enemy_bots_match_non_p1_players() -> None:
         p1 = PlayerId(1)
         non_p1 = [p for p in state.players if p != p1]
         for pid in non_p1:
-            assert (
-                pid in level.enemy_bots
-            ), f"Level {i + 1} ({level.name}): P{pid} has no bot assigned"
+            assert pid in level.enemy_bots, (
+                f"Level {i + 1} ({level.name}): P{pid} has no bot assigned"
+            )
 
 
 def test_difficulty_progression() -> None:

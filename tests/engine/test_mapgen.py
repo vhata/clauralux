@@ -61,9 +61,9 @@ class TestGenerateMap:
                 for b in suns[i + 1 :]:
                     dist = a.position.distance_to(b.position)
                     # Allow small tolerance for player placement rounding.
-                    assert (
-                        dist >= params.min_sun_spacing * 0.9
-                    ), f"{flavour}: suns too close ({dist:.1f} < {params.min_sun_spacing})"
+                    assert dist >= params.min_sun_spacing * 0.9, (
+                        f"{flavour}: suns too close ({dist:.1f} < {params.min_sun_spacing})"
+                    )
 
     def test_sun_count_in_range(self) -> None:
         config = GameConfig()
