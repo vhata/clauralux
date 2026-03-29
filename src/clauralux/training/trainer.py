@@ -64,6 +64,7 @@ class TrainingConfig:
     sigma_decay: float = 0.995
     mutation_prob: float = 0.2
     output_path: str = "data/evolved_weights.json"
+    from_scratch: bool = False
     seed: int = 42
 
 
@@ -107,12 +108,16 @@ def train(config: TrainingConfig) -> list[float]:
     # Seed population with existing trained weights if available.
     population: list[Individual] = []
     prior_best: Individual | None = None
-    try:
-        existing = load_genome(output_path)
-        population.append(Individual(genome=existing))
-        prior_best = Individual(genome=list(existing), fitness=0.0)
-        print(f"Loaded existing weights from {output_path} — seeding population.")
-    except FileNotFoundError:
+    if not config.from_scratch:
+        try:
+            existing = load_genome(output_path)
+            population.append(Individual(genome=existing))
+            prior_best = Individual(genome=list(existing), fitness=0.0)
+            print(f"Loaded existing weights from {output_path} — seeding population.")
+        except FileNotFoundError:
+            population.append(Individual(genome=default_genome()))
+    else:
+        print("Starting from scratch — ignoring existing weights.")
         population.append(Individual(genome=default_genome()))
 
     for _ in range(config.population_size - len(population)):

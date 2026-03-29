@@ -254,6 +254,11 @@ def main() -> None:
         default="data/evolved_weights.json",
         help="Output path for trained weights (default: data/evolved_weights.json)",
     )
+    parser.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="Train from scratch, ignoring existing weights",
+    )
 
     args = parser.parse_args()
 
@@ -628,6 +633,7 @@ def _run_train(args: argparse.Namespace) -> None:
         games_per_eval=args.games_per_eval,
         workers=args.workers,
         output_path=args.output,
+        from_scratch=args.from_scratch,
     )
     train(config)
 
