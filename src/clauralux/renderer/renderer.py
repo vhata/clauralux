@@ -43,7 +43,13 @@ class PygameRenderer:
         """Limit frame rate to config.ticks_per_second."""
         self._clock.tick(self._config.ticks_per_second)
 
-    def draw(self, state: GameState, intents: dict[PlayerId, str] | None = None) -> None:
+    def draw(
+        self,
+        state: GameState,
+        intents: dict[PlayerId, str] | None = None,
+        speed: int = 1,
+        paused: bool = False,
+    ) -> None:
         """Draw the full game state."""
         self._update_flash_events(state)
         self._screen.fill(BACKGROUND)
@@ -51,7 +57,7 @@ class PygameRenderer:
         self._draw_unit_groups(state)
         self._draw_flash_events()
         self._draw_suns(state)
-        self._draw_hud(state, intents or {})
+        self._draw_hud(state, intents or {}, speed=speed, paused=paused)
         pygame.display.flip()
 
     def map_to_screen(self, x: float, y: float) -> tuple[int, int]:
@@ -153,11 +159,18 @@ class PygameRenderer:
                 count_text = self._font.render(str(group.count), True, TEXT_DIM)
                 self._screen.blit(count_text, (sx + spread + 2, sy - 6))
 
-    def _draw_hud(self, state: GameState, intents: dict[PlayerId, str] | None = None) -> None:
+    def _draw_hud(
+        self,
+        state: GameState,
+        intents: dict[PlayerId, str] | None = None,
+        speed: int = 1,
+        paused: bool = False,
+    ) -> None:
         hud_y = self._window_height - HUD_HEIGHT + 10
 
-        # Tick counter.
-        tick_text = f"Tick: {state.tick}"
+        # Tick counter + speed.
+        speed_label = "PAUSED" if paused else f"{speed}x"
+        tick_text = f"Tick: {state.tick}  [{speed_label}]"
         tick_surface = self._font.render(tick_text, True, TEXT_DIM)
         self._screen.blit(tick_surface, (PADDING, hud_y))
 
