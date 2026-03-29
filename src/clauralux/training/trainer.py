@@ -34,6 +34,7 @@ from .evolution import (
 from .genome import (
     default_genome,
     genome_to_dict,
+    load_genome,
     random_genome,
     save_genome,
 )
@@ -100,13 +101,22 @@ def train(config: TrainingConfig) -> list[float]:
     """Run the full evolutionary training loop. Returns the best genome."""
     rng = random.Random(config.seed)
 
-    # Initialise population: one with defaults, rest random.
-    population: list[Individual] = [Individual(genome=default_genome())]
-    for _ in range(config.population_size - 1):
-        population.append(Individual(genome=random_genome(rng)))
-
     output_path = Path(config.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Seed population with existing trained weights if available.
+    population: list[Individual] = []
+    prior_best: Individual | None = None
+    try:
+        existing = load_genome(output_path)
+        population.append(Individual(genome=existing))
+        prior_best = Individual(genome=list(existing), fitness=0.0)
+        print(f"Loaded existing weights from {output_path} — seeding population.")
+    except FileNotFoundError:
+        population.append(Individual(genome=default_genome()))
+
+    for _ in range(config.population_size - len(population)):
+        population.append(Individual(genome=random_genome(rng)))
 
     best_ever: Individual | None = None
     sigma = config.sigma_frac
@@ -145,7 +155,12 @@ def train(config: TrainingConfig) -> list[float]:
                 genome=list(gen_best.genome),
                 fitness=gen_best.fitness,
             )
-            save_genome(best_ever.genome, output_path)
+            # Capture the prior best's evaluated fitness after gen 1.
+            if prior_best is not None and prior_best.fitness == 0.0:
+                prior_best.fitness = population[0].fitness
+            # Only save if we actually beat whatever was on disk.
+            if prior_best is None or best_ever.fitness > prior_best.fitness:
+                save_genome(best_ever.genome, output_path)
 
         elapsed = time.monotonic() - gen_start
 
@@ -170,11 +185,17 @@ def train(config: TrainingConfig) -> list[float]:
 
     # Final save and summary.
     assert best_ever is not None
-    save_genome(best_ever.genome, output_path)
-
-    print("=" * 60)
-    print(f"Training complete! Best fitness: {best_ever.fitness:.3f}")
-    print(f"Weights saved to: {output_path}")
+    if prior_best is None or best_ever.fitness > prior_best.fitness:
+        save_genome(best_ever.genome, output_path)
+        print("=" * 60)
+        print(f"Training complete! Best fitness: {best_ever.fitness:.3f}")
+        print(f"Weights saved to: {output_path}")
+    else:
+        print("=" * 60)
+        print(
+            f"Training complete! Best fitness: {best_ever.fitness:.3f} "
+            f"(did not beat prior best {prior_best.fitness:.3f} — keeping existing weights)"
+        )
     print("\nBest parameters:")
     for name, value in genome_to_dict(best_ever.genome).items():
         print(f"  {name}: {value:.3f}")
