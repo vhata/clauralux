@@ -59,17 +59,20 @@ class TrainingConfig:
     output_path: str = "data/evolved_weights.json"
     from_scratch: bool = False
     seed: int = 42
+    hall_of_fame_interval: int = 10  # save best genome every N generations
 
 
 _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
 
 
-def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None]) -> float:
+def _evaluate_individual(
+    args: tuple[list[float], int, int, list[list[float]]],
+) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
-    Args is a tuple of (genome, games_per_eval, rng_seed, prior_best_genome).
+    Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes).
     """
-    genome, games_per_eval, rng_seed, prior_best = args
+    genome, games_per_eval, rng_seed, hall_of_fame = args
 
     config = GameConfig(max_ticks=10_000)
 
@@ -85,14 +88,14 @@ def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None])
     opponents: list[Callable[[PlayerId], Bot]] = [
         _make_opponent(cls, rng_seed + i) for i, cls in enumerate(OPPONENT_BOTS)
     ]
-    # Also play against the previous best evolved bot, if available.
-    if prior_best is not None:
-        prior_genome = prior_best
+    # Play against hall-of-fame evolved bots (previous best genomes).
+    for hof_genome in hall_of_fame:
+        g = hof_genome  # capture for closure
 
-        def _prior_factory(pid: PlayerId) -> Bot:
-            return EvolvedBot(genome=prior_genome)
+        def _hof_factory(pid: PlayerId, g: list[float] = g) -> Bot:
+            return EvolvedBot(genome=g)
 
-        opponents.append(_prior_factory)
+        opponents.append(_hof_factory)
 
     # Use all map flavours plus the fixed map, with seed variation.
     def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
@@ -144,6 +147,12 @@ def train(config: TrainingConfig) -> list[float]:
     best_ever: Individual | None = None
     sigma = config.sigma_frac
 
+    # Hall of fame: best genomes from previous generations.
+    # Starts with the prior best from disk (if any).
+    hall_of_fame: list[list[float]] = []
+    if prior_best is not None:
+        hall_of_fame.append(list(prior_best.genome))
+
     num_workers = config.workers or os.cpu_count() or 4
     print(
         f"Training: pop={config.population_size}, "
@@ -161,13 +170,8 @@ def train(config: TrainingConfig) -> list[float]:
             gen_start = time.monotonic()
 
             # Build evaluation tasks.
-            prior_genome = (
-                best_ever.genome
-                if best_ever is not None
-                else (prior_best.genome if prior_best is not None else None)
-            )
             tasks = [
-                (ind.genome, config.games_per_eval, rng.randint(0, 2**31), prior_genome)
+                (ind.genome, config.games_per_eval, rng.randint(0, 2**31), hall_of_fame)
                 for ind in population
             ]
 
@@ -196,6 +200,10 @@ def train(config: TrainingConfig) -> list[float]:
                 if prior_best is None or best_ever.fitness > prior_best.fitness:
                     save_genome(best_ever.genome, output_path)
 
+            # Add to hall of fame at regular intervals.
+            if (gen + 1) % config.hall_of_fame_interval == 0:
+                hall_of_fame.append(list(gen_best.genome))
+
             elapsed = time.monotonic() - gen_start
 
             # Progress output.
@@ -204,6 +212,7 @@ def train(config: TrainingConfig) -> list[float]:
                 f"best={gen_best.fitness:.3f} avg={avg_fitness:.3f} "
                 f"all-time={best_ever.fitness:.3f} | "
                 f"sigma={sigma:.4f} | "
+                f"hof={len(hall_of_fame)} | "
                 f"{elapsed:.1f}s"
             )
 
