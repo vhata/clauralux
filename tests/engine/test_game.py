@@ -1,3 +1,5 @@
+from typing import Any
+
 from clauralux.engine.actions import SendUnits, UpgradeSun
 from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
@@ -10,7 +12,7 @@ def _simple_two_player(
     garrison_p2: float = 10.0,
     neutral_garrison: float = 5.0,
     distance: float = 100.0,
-    **config_overrides: object,
+    **config_overrides: Any,
 ) -> tuple[Game, PlayerId, PlayerId]:
     """Helper: two players with one sun each, one neutral between them."""
     p1 = PlayerId(1)
