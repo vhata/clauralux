@@ -135,9 +135,24 @@ class MenuScreen:
         sub_rect = sub_surface.get_rect(center=(self._width // 2, 72))
         self._screen.blit(sub_surface, sub_rect)
 
+        # Layout: options scroll in the area between header and footer.
+        options_top = 110
+        row_height = 32
+        footer_height = 80  # description + prompt
+        options_bottom = self._height - footer_height
+        max_visible_rows = max(1, (options_bottom - options_top) // row_height)
+
+        # Compute scroll offset to keep selected item visible.
+        scroll = 0
+        if len(visible) > max_visible_rows:
+            # Keep selection roughly centred, clamped to edges.
+            scroll = self._selected - max_visible_rows // 2
+            scroll = max(0, min(scroll, len(visible) - max_visible_rows))
+
         # Options.
-        y = 110
-        for i, opt in enumerate(visible):
+        y = options_top
+        for i in range(scroll, min(scroll + max_visible_rows, len(visible))):
+            opt = visible[i]
             is_selected = i == self._selected
 
             # Use player colour for bot options.
@@ -169,23 +184,26 @@ class MenuScreen:
                 )
                 pygame.draw.circle(self._screen, indicator_color, (40, y + 8), 5)
 
-            y += 32
+            y += row_height
 
-        # Description of selected option.
+        # Scroll indicators.
+        if scroll > 0:
+            arrow_up = self._font_small.render("▲ more above", True, TEXT_DIM)
+            self._screen.blit(arrow_up, (60, options_top - 18))
+        if scroll + max_visible_rows < len(visible):
+            arrow_down = self._font_small.render("▼ more below", True, TEXT_DIM)
+            self._screen.blit(arrow_down, (60, options_bottom - 16))
+
+        # Description of selected option (pinned to bottom).
+        desc_y = self._height - footer_height + 10
+        pygame.draw.line(self._screen, TEXT_DIM, (60, desc_y - 10), (self._width - 60, desc_y - 10))
         if visible:
-            desc_y = y + 20
-            pygame.draw.line(
-                self._screen, TEXT_DIM, (60, desc_y - 10), (self._width - 60, desc_y - 10)
-            )
             desc = visible[self._selected].current_description
             desc_surface = self._font_small.render(desc, True, TEXT_DIM)
             self._screen.blit(desc_surface, (60, desc_y))
 
-            prompt_y = desc_y + 40
-        else:
-            prompt_y = y + 60
-
         # Start prompt.
+        prompt_y = self._height - 30
         prompt_surface = self._font.render("Press ENTER to start  |  Q to quit", True, TEXT)
         prompt_rect = prompt_surface.get_rect(center=(self._width // 2, prompt_y))
         self._screen.blit(prompt_surface, prompt_rect)
