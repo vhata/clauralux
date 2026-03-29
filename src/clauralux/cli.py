@@ -224,6 +224,11 @@ def main() -> None:
         action="store_true",
         help="Train from scratch, ignoring existing weights",
     )
+    parser.add_argument(
+        "--self-play",
+        action="store_true",
+        help="Train only against other evolved bots (no hand-crafted opponents)",
+    )
 
     # Replay arguments.
     parser.add_argument(
@@ -642,6 +647,7 @@ def _run_train(args: argparse.Namespace) -> None:
         workers=args.workers,
         output_path=args.output,
         from_scratch=args.from_scratch,
+        self_play=args.self_play,
     )
     train(config)
 

@@ -58,6 +58,7 @@ class TrainingConfig:
     mutation_prob: float = 0.2
     output_path: str = "data/evolved_weights.json"
     from_scratch: bool = False
+    self_play: bool = False  # only train against other evolved bots
     seed: int = 42
     hall_of_fame_interval: int = 5  # save best genome every N generations
 
@@ -66,13 +67,14 @@ _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
 
 
 def _evaluate_individual(
-    args: tuple[list[float], int, int, list[list[float]]],
+    args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]]],
 ) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
-    Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes).
+    Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes,
+    self_play, peer_genomes).
     """
-    genome, games_per_eval, rng_seed, hall_of_fame = args
+    genome, games_per_eval, rng_seed, hall_of_fame, self_play, peers = args
 
     config = GameConfig(max_ticks=10_000)
 
@@ -87,9 +89,11 @@ def _evaluate_individual(
 
     opponents: list[Callable[[PlayerId], Bot]] = []
     opponent_weights: list[float] = []
-    for i, (cls, weight) in enumerate(OPPONENT_BOTS_WITH_WEIGHTS):
-        opponents.append(_make_opponent(cls, rng_seed + i))
-        opponent_weights.append(weight)
+
+    if not self_play:
+        for i, (cls, weight) in enumerate(OPPONENT_BOTS_WITH_WEIGHTS):
+            opponents.append(_make_opponent(cls, rng_seed + i))
+            opponent_weights.append(weight)
 
     # Play against hall-of-fame evolved bots (previous best genomes).
     for hof_genome in hall_of_fame:
@@ -99,6 +103,16 @@ def _evaluate_individual(
             return EvolvedBot(genome=g)
 
         opponents.append(_hof_factory)
+        opponent_weights.append(1.0)
+
+    # In self-play mode, also play against peers from the current population.
+    for peer_genome in peers:
+        g = peer_genome
+
+        def _peer_factory(pid: PlayerId, g: list[float] = g) -> Bot:
+            return EvolvedBot(genome=g)
+
+        opponents.append(_peer_factory)
         opponent_weights.append(1.0)
 
     # Use all map flavours plus the fixed map, with seed variation.
@@ -165,6 +179,8 @@ def train(config: TrainingConfig) -> list[float]:
         f"games/eval={config.games_per_eval}, "
         f"workers={num_workers}"
     )
+    if config.self_play:
+        print("Mode: self-play (evolved vs evolved only)")
     print(f"Output: {output_path}")
     print("=" * 60)
 
@@ -175,10 +191,25 @@ def train(config: TrainingConfig) -> list[float]:
             gen_start = time.monotonic()
 
             # Build evaluation tasks.
-            tasks = [
-                (ind.genome, config.games_per_eval, rng.randint(0, 2**31), hall_of_fame)
-                for ind in population
-            ]
+            # In self-play mode, each individual plays against a sample of
+            # peers (other genomes in the population, excluding itself).
+            tasks = []
+            for idx, ind in enumerate(population):
+                peers: list[list[float]] = (
+                    [p.genome for j, p in enumerate(population) if j != idx]
+                    if config.self_play
+                    else []
+                )
+                tasks.append(
+                    (
+                        ind.genome,
+                        config.games_per_eval,
+                        rng.randint(0, 2**31),
+                        hall_of_fame,
+                        config.self_play,
+                        peers,
+                    )
+                )
 
             # Evaluate fitness in parallel.
             if executor is not None:
