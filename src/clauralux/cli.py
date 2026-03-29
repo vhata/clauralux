@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from clauralux.bots.aggressive import AggressiveBot
 from clauralux.bots.base import Bot
@@ -74,6 +76,26 @@ MAP_PLAYER_COUNTS: dict[str, int] = {
 }
 
 FLAVOUR_NAMES = list(FLAVOURS.keys())
+
+_CONFIG_DIR = Path.home() / ".config" / "clauralux"
+_SETTINGS_PATH = _CONFIG_DIR / "settings.json"
+
+
+def _load_settings() -> dict[str, str]:
+    """Load saved menu settings from disk. Returns empty dict on any error."""
+    try:
+        return json.loads(_SETTINGS_PATH.read_text())  # type: ignore[no-any-return]
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_settings(settings: dict[str, str]) -> None:
+    """Save menu settings to disk. Silently ignores errors."""
+    try:
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _SETTINGS_PATH.write_text(json.dumps(settings, indent=2) + "\n")
+    except OSError:
+        pass
 
 
 def _parse_num(s: str, default: float) -> float:
@@ -296,10 +318,21 @@ def _get_player_count_for_map(map_value: str) -> int:
     return 2
 
 
-def _build_menu_options() -> list[MenuOption]:
+def _saved_index(choices: list[str], saved_value: str | None, fallback: int) -> int:
+    """Find the index of a saved value in a choices list, or return fallback."""
+    if saved_value is None:
+        return fallback
+    try:
+        return choices.index(saved_value)
+    except ValueError:
+        return fallback
+
+
+def _build_menu_options(saved: dict[str, str] | None = None) -> list[MenuOption]:
     """Build menu options dynamically from registries."""
     from clauralux.renderer.menu import PLAYER_COLOUR_NAMES
 
+    s = saved or {}
     bot_names = list(BOT_REGISTRY.keys())
     map_choices = list(MAP_REGISTRY.keys()) + [f"random:{f}" for f in FLAVOURS]
     player_count_choices = ["2", "3", "4", "5", "6"]
@@ -308,27 +341,28 @@ def _build_menu_options() -> list[MenuOption]:
     # Default bot assignments: cycle through available bots.
     default_bots = ["expander", "aggressive", "random", "passive", "expander", "aggressive"]
 
+    mode_choices = ["watch", "campaign", "headless", "tournament"]
     options: list[MenuOption] = [
         MenuOption(
             key="mode",
             label="Mode",
             description="Watch: visual game. Campaign: play levels. Headless: fast.",
-            choices=["watch", "campaign", "headless", "tournament"],
-            default_index=0,
+            choices=mode_choices,
+            default_index=_saved_index(mode_choices, s.get("mode"), 0),
         ),
         MenuOption(
             key="map",
             label="Map",
             description="Map layout. 'random:X' generates a themed random map.",
             choices=map_choices,
-            default_index=0,
+            default_index=_saved_index(map_choices, s.get("map"), 0),
         ),
         MenuOption(
             key="players",
             label="Players (random)",
             description="Number of players for random maps. Ignored for fixed maps.",
             choices=player_count_choices,
-            default_index=0,
+            default_index=_saved_index(player_count_choices, s.get("players"), 0),
             visible_when=lambda v: v["map"].startswith("random:"),
         ),
     ]
@@ -337,7 +371,8 @@ def _build_menu_options() -> list[MenuOption]:
     for i in range(6):
         player_num = i + 1
         colour = PLAYER_COLOUR_NAMES.get(player_num, f"P{player_num}")
-        default_idx = bot_names.index(default_bots[i]) if default_bots[i] in bot_names else 0
+        hardcoded_default = bot_names.index(default_bots[i]) if default_bots[i] in bot_names else 0
+        default_idx = _saved_index(bot_names, s.get(f"bot{player_num}"), hardcoded_default)
 
         def make_visible(n: int) -> Callable[[dict[str, str]], bool]:
             def check(v: dict[str, str]) -> bool:
@@ -372,28 +407,28 @@ def _build_menu_options() -> list[MenuOption]:
     for field_name, meta in CONFIG_FIELD_META.items():
         if not meta.menu_visible:
             continue
+        cfg_key = f"cfg_{field_name}"
+        cfg_choices = list(meta.choices)
         options.append(
             MenuOption(
-                key=f"cfg_{field_name}",
+                key=cfg_key,
                 label=meta.label,
                 description=meta.description,
-                choices=list(meta.choices),
-                default_index=meta.default_choice,
+                choices=cfg_choices,
+                default_index=_saved_index(cfg_choices, s.get(cfg_key), meta.default_choice),
                 visible_when=not_campaign,
             )
         )
 
-    options.extend(
-        [
-            MenuOption(
-                key="campaign_start",
-                label="Campaign Start",
-                description="Which campaign level to start from.",
-                choices=campaign_levels,
-                default_index=0,
-                visible_when=lambda v: v["mode"] == "campaign",
-            ),
-        ]
+    options.append(
+        MenuOption(
+            key="campaign_start",
+            label="Campaign Start",
+            description="Which campaign level to start from.",
+            choices=campaign_levels,
+            default_index=_saved_index(campaign_levels, s.get("campaign_start"), 0),
+            visible_when=lambda v: v["mode"] == "campaign",
+        ),
     )
 
     return options
@@ -403,12 +438,15 @@ def _run_gui_menu() -> None:
     """Show the GUI menu and launch the selected game."""
     from clauralux.renderer.menu import MenuScreen
 
-    options = _build_menu_options()
+    saved = _load_settings()
+    options = _build_menu_options(saved)
     menu = MenuScreen(options)
     result = menu.run()
 
     if result is None:
         return  # user quit
+
+    _save_settings(result)
 
     mode = result["mode"]
     map_name = result["map"]
