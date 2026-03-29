@@ -9,6 +9,14 @@ from clauralux.engine.view import GameView
 class Bot(ABC):
     """Base class for all bots. Implement `decide` to play."""
 
+    def __init__(self) -> None:
+        self._intent: str = ""
+
+    @property
+    def intent(self) -> str:
+        """Human-readable description of the bot's current strategic thinking."""
+        return self._intent
+
     @abstractmethod
     def decide(self, view: GameView) -> list[Action]:
         """Given the current game view, return a list of actions to take this tick.

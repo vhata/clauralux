@@ -10,4 +10,5 @@ class PassiveBot(Bot):
     """Does absolutely nothing. Useful for testing."""
 
     def decide(self, view: GameView) -> list[Action]:
+        self._intent = "Doing nothing. Peacefully existing."
         return []

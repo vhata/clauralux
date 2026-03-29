@@ -15,6 +15,7 @@ class ExpanderBot(Bot):
         upgrade_threshold: int = 30,
         act_interval: int = 40,
     ) -> None:
+        super().__init__()
         self._reserve = reserve
         self._upgrade_threshold = upgrade_threshold
         self._act_interval = act_interval
@@ -23,29 +24,40 @@ class ExpanderBot(Bot):
         if view.tick % self._act_interval != 0:
             return []
 
-        actions: list[Action] = []
         my_suns = view.my_suns()
 
         # Phase 1: try to upgrade suns with lots of garrison.
         for sun in my_suns:
             if sun.level < view.config.max_sun_level and sun.garrison >= self._upgrade_threshold:
-                actions.append(UpgradeSun(sun.id))
-                return actions  # one action at a time, keep it simple
+                self._intent = (
+                    f"Sun {sun.id} has {sun.garrison} garrison — investing in upgrade to level"
+                    f" {sun.level + 1}."
+                )
+                return [UpgradeSun(sun.id)]
 
         # Phase 2: capture the nearest neutral.
         neutrals = view.neutral_suns()
         if neutrals:
             target = self._nearest_target(my_suns, neutrals)
             if target is not None:
+                self._intent = (
+                    f"Expanding: nearest neutral is Sun {target.id}"
+                    f" (garrison {target.garrison}). Sending all available."
+                )
                 return self._send_from_all(my_suns, target)
 
         # Phase 3: attack weakest enemy.
         enemies = view.enemy_suns()
         if enemies:
             target = min(enemies, key=lambda s: s.garrison)
+            self._intent = (
+                f"No neutrals left. Attacking weakest enemy Sun {target.id}"
+                f" (P{target.owner}, garrison {target.garrison})."
+            )
             return self._send_from_all(my_suns, target)
 
-        return actions
+        self._intent = "Nothing to do — all suns are mine."
+        return []
 
     def _nearest_target(
         self,
