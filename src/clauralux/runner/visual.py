@@ -23,10 +23,12 @@ class VisualRunner:
         config: GameConfig,
         initial_state: GameState,
         bots: Mapping[PlayerId, Bot],
+        bot_names: Mapping[PlayerId, str] | None = None,
     ) -> None:
         self._config = config
         self._game = Game(config, initial_state)
         self._bots = bots
+        self._bot_names: dict[PlayerId, str] = dict(bot_names) if bot_names else {}
         self._renderer = PygameRenderer(config)
         self._paused = False
         self._speed_multiplier = 1
@@ -80,6 +82,7 @@ class VisualRunner:
                 intents,
                 speed=self._speed_multiplier,
                 paused=self._paused,
+                bot_names=self._bot_names,
             )
             renderer.tick()
 

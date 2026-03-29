@@ -474,9 +474,10 @@ def _run_visual(config: GameConfig, map_name: str, bot_names: list[str], seed: i
     from clauralux.runner.visual import VisualRunner
 
     state, bots = _make_state_and_bots(config, map_name, bot_names, seed)
+    bot_name_map = {PlayerId(i + 1): name for i, name in enumerate(bot_names)}
     print(f"Watching: {' vs '.join(bot_names)} on {map_name}")
     print("Controls: Space=pause, Up/Down=speed, Q=quit")
-    runner = VisualRunner(config, state, bots)
+    runner = VisualRunner(config, state, bots, bot_names=bot_name_map)
     result = runner.run()
     _print_result(result, bot_names)
 
@@ -552,13 +553,17 @@ def _run_campaign(args: argparse.Namespace) -> None:
         print(f"  {level.description}")
         print(f"  Enemies: {enemies}")
 
+        campaign_bot_names = {PlayerId(1): p1_bot_name}
+        for pid, bname in level.enemy_bots.items():
+            campaign_bot_names[pid] = bname
+
         if args.headless:
             from clauralux.runner.headless import HeadlessRunner
 
             result = HeadlessRunner(config, state, bots).run()
         else:
             print("  Controls: Space=pause, Up/Down=speed, Q=quit")
-            result = VisualRunner(config, state, bots).run()
+            result = VisualRunner(config, state, bots, bot_names=campaign_bot_names).run()
 
         bot_names = [p1_bot_name, *level.enemy_bots.values()]
         _print_result(result, bot_names)

@@ -49,6 +49,7 @@ class PygameRenderer:
         intents: dict[PlayerId, str] | None = None,
         speed: int = 1,
         paused: bool = False,
+        bot_names: dict[PlayerId, str] | None = None,
     ) -> None:
         """Draw the full game state."""
         self._update_flash_events(state)
@@ -57,7 +58,7 @@ class PygameRenderer:
         self._draw_unit_groups(state)
         self._draw_flash_events()
         self._draw_suns(state)
-        self._draw_hud(state, intents or {}, speed=speed, paused=paused)
+        self._draw_hud(state, intents or {}, speed=speed, paused=paused, bot_names=bot_names or {})
         pygame.display.flip()
 
     def map_to_screen(self, x: float, y: float) -> tuple[int, int]:
@@ -165,6 +166,7 @@ class PygameRenderer:
         intents: dict[PlayerId, str] | None = None,
         speed: int = 1,
         paused: bool = False,
+        bot_names: dict[PlayerId, str] | None = None,
     ) -> None:
         hud_y = self._window_height - HUD_HEIGHT + 10
 
@@ -191,10 +193,12 @@ class PygameRenderer:
             units_in_flight = sum(g.count for g in state.unit_groups if g.owner == player_id)
             eliminated = player_id in state.eliminated
 
+            bot_name = (bot_names or {}).get(player_id, "")
+            name_tag = f" ({bot_name})" if bot_name else ""
             if eliminated:
-                label = f"P{player_id}: OUT"
+                label = f"P{player_id}{name_tag}: OUT"
             else:
-                label = f"P{player_id}: {suns_owned}s {total_garrison}+{units_in_flight}u"
+                label = f"P{player_id}{name_tag}: {suns_owned}s {total_garrison}+{units_in_flight}u"
 
             label_surface = self._font.render(label, True, color)
             self._screen.blit(label_surface, (x, hud_y))
