@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- 5 new bot archetypes: SwarmBot, CoordinatorBot, ReactiveBot, EconomicBot, BaiterBot
+- Central bot registry — new bots automatically appear in CLI, menu, and training
 - Evolved bot: parameterized heuristic bot with 26 evolvable parameters
 - Evolutionary training harness (`clauralux train`) with parallel fitness evaluation
 - `--from-scratch` flag for training from a clean slate
