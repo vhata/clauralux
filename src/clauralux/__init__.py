@@ -1,3 +1,1 @@
-from .core import add
-
-__all__ = ["add"]
+# Intentionally empty — import from subpackages directly.
