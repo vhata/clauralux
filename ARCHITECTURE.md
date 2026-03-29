@@ -1,0 +1,253 @@
+# Clauralux Architecture & Developer Guide
+
+Everything you need to know to pick this project up cold and start building on it.
+
+## What Is This?
+
+An Auralux clone built as a bot strategy development platform. The game engine is completely decoupled from rendering — you can run bot-vs-bot games headlessly at full speed, or watch them in a pygame window. The primary use case is writing and testing bot strategies, not playing manually (though human play is a planned feature).
+
+## Game Rules
+
+- A map has **suns** — some owned by players (colour-coded), some neutral
+- Owned suns **produce units** over time. Higher-level suns produce faster
+- Players **send units** from a sun to any other sun. Units travel as a group
+- Units arriving at a **friendly** sun add to its garrison (reinforce)
+- Units arriving at an **enemy/neutral** sun subtract from garrison (attack). 1 attacker removes `attack_ratio` defenders. If garrison hits 0, the sun is captured with remaining attackers as the new garrison
+- Suns can be **upgraded** (level 1→3) by spending garrison units. Captured suns reset to level 1 (configurable)
+- A player is **eliminated** when they have no suns and no units in flight
+- **Last player standing wins**. If max ticks is reached, it's a draw
+
+## Architecture: Three Clean Layers
+
+```
+┌──────────────────────────────────────────────────┐
+│  Runner Layer (headless / visual / tournament)   │
+├──────────────────────────────────────────────────┤
+│  Bot Layer (base class + 8 implementations)      │
+├──────────────────────────────────────────────────┤
+│  Engine Layer (pure logic, zero external deps)   │
+└──────────────────────────────────────────────────┘
+```
+
+**Engine** has zero external dependencies. **Bots** depend only on engine types. **Renderer/Visual runner** depends on pygame-ce (optional dep). This is deliberate — don't break it.
+
+## File Map
+
+### Engine (`src/clauralux/engine/`) — Zero external deps
+
+| File | What | Key types |
+|------|------|-----------|
+| `types.py` | Primitives | `PlayerId`, `SunId`, `Tick`, `Position`, `NEUTRAL` |
+| `config.py` | All tunable parameters | `GameConfig` (frozen dataclass), `CONFIG_FIELD_META` (menu metadata) |
+| `state.py` | Mutable game state | `Sun`, `UnitGroup`, `GameState` |
+| `actions.py` | What bots can do | `SendUnits`, `UpgradeSun`, `Action` (union type) |
+| `game.py` | Tick-based simulation | `Game` class with `tick()`, `apply_actions()`, `get_view()` |
+| `view.py` | Read-only snapshot for bots | `GameView`, `SunView`, `UnitGroupView` |
+| `maps.py` | Handcrafted map layouts | `two_player_simple`, `three_player_triangle`, `four_player_cross`, `five_player_pentagon`, `six_player_hex` |
+| `mapgen.py` | Themed random generation | `generate_map(config, flavour, num_players, seed)`, `flavour_config()` |
+| `campaign.py` | 18-level campaign | `CampaignLevel`, `CAMPAIGN_LEVELS` list |
+
+### Bots (`src/clauralux/bots/`)
+
+| File | Strategy | Personality |
+|------|----------|-------------|
+| `base.py` | Abstract base class | `Bot.decide(view) -> list[Action]`, `Bot.intent` property |
+| `passive.py` | Does nothing | "Peacefully existing." |
+| `random_bot.py` | Dice rolls | "Dice say send 7 units to Sun 4. Why not." |
+| `aggressive.py` | Overwhelm weakest target | Waits until it can overwhelm, then sends everything |
+| `expander.py` | Economy first | Grab neutrals → upgrade → attack enemies |
+| `turtle.py` | Upgrade and fortify | Max all levels, build garrison, then crush |
+| `rush.py` | Constant early pressure | Sends units every 20 ticks at the nearest target |
+| `sniper.py` | Eliminate players | Ignores neutrals, targets weakest player's weakest sun |
+| `opportunist.py` | Strike the weak | Scores targets by garrison+distance, pounces on low garrisons |
+
+### Renderer (`src/clauralux/renderer/`) — Pygame-ce
+
+| File | What |
+|------|------|
+| `colors.py` | Player colour palette (6 players), `get_color()`, `get_bright_color()` |
+| `renderer.py` | `PygameRenderer` — draws suns (pulsing glow, level rings, garrison count), unit groups (swarm dots), trajectories (dashed lines), capture flashes, HUD (stats, bars, intents, speed) |
+| `menu.py` | `MenuOption` (with `visible_when` callback), `MenuScreen` — data-driven GUI menu |
+
+### Runners (`src/clauralux/runner/`)
+
+| File | What |
+|------|------|
+| `headless.py` | `HeadlessRunner` — fast bot-vs-bot, returns `GameResult` |
+| `visual.py` | `VisualRunner` — pygame display, passes intents/speed/pause to renderer |
+| `tournament.py` | `run_tournament()` — N games, aggregates win rates |
+
+### CLI (`src/clauralux/cli.py`)
+
+Entry point. Running `clauralux` with no args shows the GUI menu. CLI commands: `watch`, `headless`, `tournament`, `campaign`.
+
+Key registries (add to these to extend):
+- `BOT_REGISTRY: dict[str, type[Bot]]` — add a bot here, it appears in the menu automatically
+- `MAP_REGISTRY: dict[str, MapFactory]` — add a map here
+- `MAP_PLAYER_COUNTS: dict[str, int]` — player count per map (for menu bot selector visibility)
+
+## How the Tick Loop Works
+
+```
+Game.tick():
+  1. _process_actions()    — validate & execute queued SendUnits/UpgradeSun
+  2. _move_unit_groups()   — advance each group by unit_speed toward target
+  3. _resolve_arrivals()   — groups within unit_speed of target: reinforce or attack
+  4. _produce_units()      — integer tick counter per sun, spawn unit when threshold hit
+  5. _check_win_condition() — eliminate players with no suns & no groups, declare winner
+  6. increment tick
+```
+
+Actions are queued via `game.apply_actions(player_id, actions)` before each `tick()`. The runner handles polling bots and feeding actions.
+
+## How to Add a New Bot
+
+1. Create `src/clauralux/bots/my_bot.py`:
+
+```python
+from clauralux.bots.base import Bot
+from clauralux.engine.actions import Action, SendUnits
+from clauralux.engine.view import GameView
+
+class MyBot(Bot):
+    def decide(self, view: GameView) -> list[Action]:
+        # view.my_suns(), view.enemy_suns(), view.neutral_suns()
+        # view.my_unit_groups(), view.config, view.tick
+        self._intent = "Thinking about stuff..."
+        return []  # or a list of SendUnits/UpgradeSun actions
+```
+
+2. Register in `cli.py`:
+
+```python
+from clauralux.bots.my_bot import MyBot
+
+BOT_REGISTRY = {
+    ...
+    "my_bot": MyBot,
+}
+```
+
+That's it. It appears in the GUI menu and CLI automatically.
+
+## How to Add a New Tunable Parameter
+
+1. Add the field to `GameConfig` in `config.py`:
+
+```python
+@dataclass(frozen=True, slots=True)
+class GameConfig:
+    ...
+    my_new_param: float = 1.0
+```
+
+2. Add metadata in the same file to expose it in the menu:
+
+```python
+CONFIG_FIELD_META = {
+    ...
+    "my_new_param": ConfigFieldMeta(
+        label="My Param",
+        description="What this does.",
+        choices=["0.5", "1.0 (default)", "2.0"],
+        default_choice=1,
+    ),
+}
+```
+
+That's it. The menu auto-generates the option and the config builder parses it.
+
+## How to Add a New Map
+
+1. Add a factory function in `maps.py`:
+
+```python
+def my_map(config: GameConfig) -> GameState:
+    suns = dict([
+        _sun(0, x, y, PlayerId(1), config.default_player_garrison),
+        _sun(1, x, y, PlayerId(2), config.default_player_garrison),
+        _sun(2, x, y, NEUTRAL, config.default_neutral_garrison),
+    ])
+    return GameState(suns=suns, players=[PlayerId(1), PlayerId(2)])
+```
+
+2. Register in `cli.py`:
+
+```python
+MAP_REGISTRY = { ..., "my_map": my_map }
+MAP_PLAYER_COUNTS = { ..., "my_map": 2 }
+```
+
+For random map flavours, add to `FLAVOURS` dict in `mapgen.py`.
+
+## How to Add a New Map Flavour
+
+Add to `FLAVOURS` in `mapgen.py`:
+
+```python
+FLAVOURS = {
+    ...
+    "my_flavour": FlavourParams(
+        total_suns=(8, 12),
+        neutral_garrison=(10.0, 20.0),
+        min_sun_spacing=80.0,
+        player_edge_bias=0.8,
+        config_overrides={"production_interval": 25},
+    ),
+}
+```
+
+It appears in the menu as `random:my_flavour` automatically.
+
+## Key Design Decisions
+
+- **Engine has zero deps.** Don't import pygame or anything external in `engine/`. This allows headless testing and fast simulation.
+- **Bots see `GameView`, not `GameState`.** GameView is frozen/immutable with integer garrisons. Bots can't cheat by mutating state.
+- **Human player is planned as just another Bot.** `HumanBot` would have methods like `select_sun()`, `send_to_sun()` called by the visual runner from pygame events. The bot itself has no pygame dependency.
+- **Deterministic simulation.** Same seed + same actions = same outcome. Integer tick counting for production (not float accumulation) to avoid drift.
+- **Menu is data-driven.** `MenuOption` has a `visible_when` callback. Bot selectors appear/hide based on map player count. Config options auto-generated from `CONFIG_FIELD_META`.
+- **Bot intent narration.** Every bot sets `self._intent` during `decide()` to explain its reasoning. Displayed in the HUD. Eliminated bots show 💀.
+- **Flavour configs.** Random maps apply config overrides (e.g. rush = fast production + fast units). `flavour_config()` uses `dataclasses.replace()`.
+
+## What's NOT Built Yet
+
+- **Human player** — `HumanBot` that maps mouse clicks to actions (planned architecture exists in the plan, never implemented)
+- **Replay system** — record actions per tick, replay deterministically
+- **Bot hot-reloading** — edit a bot, see changes without restarting
+- **Sound** — no audio at all
+- **Fog of war** — bots see everything currently
+- **Network multiplayer** — not even considered
+- **Save/load** — no game state persistence
+
+## Tooling
+
+- **uv** for dependency management (`uv sync --group dev --extra visual`)
+- **pytest** with coverage (`make test`)
+- **ruff** v0.15.8 for linting and formatting (`make format`, `make lint`)
+- **mypy** strict mode (`make type`)
+- **pre-commit** hooks enforce all of the above on commit
+- **pygame-ce** (not pygame) — community edition bundles SDL properly
+
+`make check` runs format check + lint + mypy + tests. Always run before committing.
+
+## Running
+
+```bash
+uv run clauralux              # GUI menu
+uv run clauralux watch        # bot-vs-bot with defaults
+uv run clauralux campaign --bot expander
+uv run clauralux headless --bot aggressive --bot turtle
+uv run clauralux tournament --bot sniper --bot opportunist --games 100
+```
+
+Visual controls: Space = pause, Up/Down = speed (2x steps, shown in HUD), Q = quit.
+
+## Stats
+
+- ~3200 lines of Python
+- 60 tests
+- 30 source files
+- 8 bot strategies
+- 5 handcrafted maps + 4 random flavours
+- 18 campaign levels
+- 9 tunable config parameters exposed in menu
