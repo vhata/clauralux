@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - 5 new bot archetypes: SwarmBot, CoordinatorBot, ReactiveBot, EconomicBot, BaiterBot
 - Central bot registry — new bots automatically appear in CLI, menu, and training
+- Noisy opponent wrapper for training diversity (randomly drops 10% of actions)
+
+### Changed
+- Training now uses all 4 map flavours (strategic, rush, chokepoint, swarm)
+- Richer fitness signal: rewards fast wins and territorial control, not just win/loss
+- Training opponent pool now includes all 12 non-passive, non-evolved bots
 - Evolved bot: parameterized heuristic bot with 26 evolvable parameters
 - Evolutionary training harness (`clauralux train`) with parallel fitness evaluation
 - `--from-scratch` flag for training from a clean slate
