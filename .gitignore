@@ -17,6 +17,9 @@ dist/
 .coverage
 htmlcov/
 
+# Rust build artifacts
+rust/target/
+
 # Training artifacts
 data/
 

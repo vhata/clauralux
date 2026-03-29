@@ -1,5 +1,3 @@
-import dataclasses
-
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
 from clauralux.engine.config import GameConfig
 
@@ -13,7 +11,7 @@ def test_campaign_has_18_levels() -> None:
 def test_all_levels_produce_valid_state() -> None:
     for i, level in enumerate(CAMPAIGN_LEVELS):
         base_config = GameConfig()
-        config = dataclasses.replace(base_config, **level.config_overrides)
+        config = base_config.replace(**level.config_overrides)
         state = level.map_factory(config)
 
         # Has at least 2 players.
@@ -39,7 +37,7 @@ def test_all_bot_names_are_valid() -> None:
 def test_enemy_bots_match_non_p1_players() -> None:
     for i, level in enumerate(CAMPAIGN_LEVELS):
         base_config = GameConfig()
-        config = dataclasses.replace(base_config, **level.config_overrides)
+        config = base_config.replace(**level.config_overrides)
         state = level.map_factory(config)
 
         # Every non-P1 player should have a bot assigned.

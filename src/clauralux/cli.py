@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import sys
 from collections.abc import Callable
@@ -109,8 +108,6 @@ def _parse_num(s: str, default: float) -> float:
 
 def _build_config_from_menu(result: dict[str, str]) -> GameConfig:
     """Build a GameConfig from menu result values, driven by CONFIG_FIELD_META."""
-    import dataclasses as dc
-
     defaults = GameConfig()
     overrides: dict[str, object] = {}
 
@@ -151,7 +148,7 @@ def _build_config_from_menu(result: dict[str, str]) -> GameConfig:
         extra = tuple(40 + 20 * i for i in range(max_level - len(base) - 1))
         overrides["upgrade_costs"] = (*base, *extra)
 
-    return dc.replace(defaults, **overrides)  # type: ignore[arg-type]
+    return defaults.replace(**overrides)
 
 
 def make_bot(name: str) -> Bot:
@@ -583,7 +580,7 @@ def _run_campaign(args: argparse.Namespace) -> None:
 
     for i, level in enumerate(CAMPAIGN_LEVELS[start - 1 :], start=start):
         base_config = GameConfig(max_ticks=args.max_ticks, unit_speed=args.speed)
-        config = dataclasses.replace(base_config, **level.config_overrides)
+        config = base_config.replace(**level.config_overrides)
         state = level.map_factory(config)
 
         # Build bots: P1 is the user's choice, rest from level definition.

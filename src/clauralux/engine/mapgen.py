@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -71,7 +70,7 @@ def flavour_config(base: GameConfig, flavour: str) -> GameConfig:
     params = FLAVOURS.get(flavour)
     if params is None:
         return base
-    return dataclasses.replace(base, **params.config_overrides)
+    return base.replace(**params.config_overrides)
 
 
 def generate_map(

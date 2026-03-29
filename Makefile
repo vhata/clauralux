@@ -1,8 +1,9 @@
-.PHONY: help sync format lint type test check precommit
+.PHONY: help sync format lint type test check precommit build-rust
 
 help:
 	@echo "Available targets:"
 	@echo "  sync       - Install/update dependencies"
+	@echo "  build-rust - Build Rust engine extension"
 	@echo "  precommit  - Install pre-commit hooks"
 	@echo "  format     - Format code with ruff"
 	@echo "  lint       - Lint code with ruff"
@@ -12,6 +13,9 @@ help:
 
 sync:
 	uv sync --group dev
+
+build-rust:
+	uv run maturin develop --release
 
 precommit:
 	uv run pre-commit install
