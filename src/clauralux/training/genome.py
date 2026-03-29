@@ -47,10 +47,9 @@ PARAM_SPECS: tuple[ParamSpec, ...] = (
     ParamSpec("upgrade_when_no_targets", 0.0, 1.0, 0.7),
     ParamSpec("eco_phase_duration", 0.0, 2000.0, 500.0),
     # Timing
-    ParamSpec("act_interval", 10.0, 80.0, 30.0),
+    ParamSpec("act_interval", 10.0, 40.0, 30.0),
     ParamSpec("early_aggression", 0.0, 1.0, 0.3),
     ParamSpec("patience", 0.0, 2.0, 1.0),
-    ParamSpec("retreat_threshold", 0.0, 1.0, 0.0),
     # Multi-sun coordination
     ParamSpec("nearest_sun_weight", 0.0, 3.0, 1.0),
     ParamSpec("reinforce_own", 0.0, 1.0, 0.2),

@@ -17,7 +17,7 @@ from clauralux.training.genome import (
 
 class TestParamSpecs:
     def test_param_count(self) -> None:
-        assert NUM_PARAMS == 26
+        assert NUM_PARAMS == 25
 
     def test_unique_names(self) -> None:
         names = [p.name for p in PARAM_SPECS]
