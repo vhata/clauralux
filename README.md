@@ -2,6 +2,19 @@
 
 An Auralux clone built for bot strategy development. The game engine is completely decoupled from rendering — write bots, pit them against each other headlessly at full speed, or watch them fight in a pygame window.
 
+## How the Game Works
+
+The map contains **suns** — some owned by players (colour-coded), some neutral. Each player starts with one sun.
+
+- **Production**: Owned suns produce units over time. Higher-level suns produce faster.
+- **Sending units**: Select units at a sun and send them to any other sun. They travel across the map as a group.
+- **Reinforcing**: Units arriving at a friendly sun add to its garrison.
+- **Attacking**: Units arriving at an enemy or neutral sun fight the garrison — each attacker removes one defender. If the garrison hits zero, the attacker captures the sun with any remaining units.
+- **Upgrading**: Spend garrison units to upgrade a sun's level (up to level 3), increasing its production rate. Captured suns reset to level 1.
+- **Winning**: A player is eliminated when they have no suns and no units in flight. Last player standing wins. If the tick limit is reached, it's a draw.
+
+All of these parameters (production speed, attack ratio, upgrade costs, level reset, etc.) are configurable via `GameConfig`.
+
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
