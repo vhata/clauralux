@@ -83,8 +83,8 @@ def _evaluate_individual(args: tuple[list[float], int, int]) -> float:
 
     maps = [
         two_player_simple,
-        lambda cfg: generate_map(cfg, "default", 2, seed=rng_seed),
-        lambda cfg: generate_map(cfg, "dense", 2, seed=rng_seed + 1),
+        lambda cfg: generate_map(cfg, "strategic", 2, seed=rng_seed),
+        lambda cfg: generate_map(cfg, "rush", 2, seed=rng_seed + 1),
     ]
 
     return evaluate_fitness(
