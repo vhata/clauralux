@@ -17,4 +17,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detailed status overlay when pausing a game (Space key)
 - Menu scrolling when options overflow the screen
 - Settings persistence across sessions (`~/.config/clauralux/settings.json`)
+- Rust game engine via PyO3 — ~10x faster training (0.4s/gen vs 5s/gen)
 - Initial project setup
