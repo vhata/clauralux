@@ -10,6 +10,24 @@ pub struct Position {
     pub y: f64,
 }
 
+// Pure Rust methods — callable from other Rust modules.
+impl Position {
+    pub fn distance_to(&self, other: &Position) -> f64 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn direction_to(&self, other: &Position) -> (f64, f64) {
+        let dist = self.distance_to(other);
+        if dist == 0.0 {
+            (0.0, 0.0)
+        } else {
+            ((other.x - self.x) / dist, (other.y - self.y) / dist)
+        }
+    }
+}
+
 #[pymethods]
 impl Position {
     #[new]
@@ -17,21 +35,14 @@ impl Position {
         Position { x, y }
     }
 
-    /// Calculate the Euclidean distance to another position.
-    fn distance_to(&self, other: &Position) -> f64 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        (dx * dx + dy * dy).sqrt()
+    #[pyo3(name = "distance_to")]
+    fn py_distance_to(&self, other: &Position) -> f64 {
+        self.distance_to(other)
     }
 
-    /// Return a unit vector pointing from self toward other.
-    fn direction_to(&self, other: &Position) -> (f64, f64) {
-        let dist = self.distance_to(other);
-        if dist == 0.0 {
-            (0.0, 0.0)
-        } else {
-            ((other.x - self.x) / dist, (other.y - self.y) / dist)
-        }
+    #[pyo3(name = "direction_to")]
+    fn py_direction_to(&self, other: &Position) -> (f64, f64) {
+        self.direction_to(other)
     }
 
     fn __repr__(&self) -> String {

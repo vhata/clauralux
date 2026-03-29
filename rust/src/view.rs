@@ -178,7 +178,20 @@ impl GameView {
 
     /// Build a GameView snapshot from the mutable GameState.
     #[staticmethod]
-    fn from_state(
+    #[pyo3(name = "from_state")]
+    fn py_from_state(
+        py: Python<'_>,
+        state: &GameState,
+        player_id: i64,
+        config: Py<GameConfig>,
+    ) -> PyResult<Self> {
+        Self::from_state(py, state, player_id, config)
+    }
+}
+
+// Pure Rust method — callable from game.rs.
+impl GameView {
+    pub fn from_state(
         py: Python<'_>,
         state: &GameState,
         player_id: i64,

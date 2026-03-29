@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 mod actions;
 mod config;
+mod game;
 mod state;
 mod types;
 mod view;
@@ -28,6 +29,9 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<view::SunView>()?;
     m.add_class::<view::UnitGroupView>()?;
     m.add_class::<view::GameView>()?;
+
+    // Game
+    m.add_class::<game::Game>()?;
 
     Ok(())
 }
