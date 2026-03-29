@@ -42,6 +42,7 @@ class PygameRenderer:
     def draw(self, state: GameState) -> None:
         """Draw the full game state."""
         self._screen.fill(BACKGROUND)
+        self._draw_trajectories(state)
         self._draw_unit_groups(state)
         self._draw_suns(state)
         self._draw_hud(state)
@@ -54,6 +55,38 @@ class PygameRenderer:
     def screen_to_map(self, sx: int, sy: int) -> tuple[float, float]:
         """Convert screen pixel coordinates to game map coordinates."""
         return (float(sx - self._offset_x), float(sy - self._offset_y))
+
+    def _draw_trajectories(self, state: GameState) -> None:
+        """Draw faint dashed lines from unit groups to their target suns."""
+        for group in state.unit_groups:
+            target = state.suns.get(group.target_sun_id)
+            if target is None:
+                continue
+            sx, sy = self.map_to_screen(group.position.x, group.position.y)
+            tx, ty = self.map_to_screen(target.position.x, target.position.y)
+            color = (*get_color(group.owner), 35)
+
+            # Draw dashed line: 6px on, 6px off.
+            dx = tx - sx
+            dy = ty - sy
+            length = math.sqrt(dx * dx + dy * dy)
+            if length < 1:
+                continue
+            ux, uy = dx / length, dy / length
+
+            dash_surface = pygame.Surface(
+                (self._window_width, self._window_height), pygame.SRCALPHA
+            )
+            pos = 0.0
+            while pos < length:
+                end = min(pos + 6, length)
+                x1 = int(sx + ux * pos)
+                y1 = int(sy + uy * pos)
+                x2 = int(sx + ux * end)
+                y2 = int(sy + uy * end)
+                pygame.draw.line(dash_surface, color, (x1, y1), (x2, y2), 1)
+                pos += 12  # 6 on + 6 off
+            self._screen.blit(dash_surface, (0, 0))
 
     def _draw_suns(self, state: GameState) -> None:
         for sun in state.suns.values():
@@ -91,14 +124,22 @@ class PygameRenderer:
             sx, sy = self.map_to_screen(group.position.x, group.position.y)
             color = get_bright_color(group.owner)
 
-            # Size scales with count, but capped.
-            radius = max(2, min(int(math.sqrt(group.count)) + 1, 8))
-            pygame.draw.circle(self._screen, color, (sx, sy), radius)
+            # Render as a small swarm of dots rather than one big circle.
+            num_dots = min(group.count, 8)
+            spread = min(4 + group.count, 12)
+
+            for i in range(num_dots):
+                # Deterministic scatter using a simple hash-like offset.
+                angle = i * 2.399 + group.count * 0.7  # golden angle spiral
+                r = spread * (0.3 + 0.7 * ((i + 1) / num_dots))
+                dot_x = int(sx + math.cos(angle) * r)
+                dot_y = int(sy + math.sin(angle) * r)
+                pygame.draw.circle(self._screen, color, (dot_x, dot_y), 2)
 
             # Small count label for larger groups.
             if group.count >= 5:
                 count_text = self._font.render(str(group.count), True, TEXT_DIM)
-                self._screen.blit(count_text, (sx + radius + 2, sy - 6))
+                self._screen.blit(count_text, (sx + spread + 2, sy - 6))
 
     def _draw_hud(self, state: GameState) -> None:
         hud_y = self._window_height - HUD_HEIGHT + 10
