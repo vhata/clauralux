@@ -16,6 +16,7 @@ from clauralux.engine.mapgen import FLAVOURS, flavour_config, generate_map
 from clauralux.engine.maps import three_player_triangle, two_player_simple
 from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
+from clauralux.renderer.menu import MenuOption
 from clauralux.runner.headless import GameResult
 
 MapFactory = Callable[[GameConfig], GameState]
@@ -47,8 +48,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Clauralux — an Auralux clone")
     parser.add_argument(
         "command",
+        nargs="?",
+        default=None,
         choices=["watch", "headless", "tournament", "campaign"],
-        help="watch/headless/tournament: bot games. campaign: play through levels.",
+        help="watch/headless/tournament/campaign. Omit for GUI menu.",
     )
     parser.add_argument(
         "--bot",
@@ -105,6 +108,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # No command given — launch GUI menu.
+    if args.command is None:
+        _run_gui_menu()
+        return
+
     if args.command == "campaign":
         _run_campaign(args)
         return
@@ -147,6 +155,112 @@ def main() -> None:
         _run_headless(config, map_name, bot_names, args.seed)
     elif args.command == "tournament":
         _run_tournament(config, map_name, bot_names, args.games, args.seed)
+
+
+def _build_menu_options() -> list[MenuOption]:
+    """Build menu options dynamically from registries."""
+    bot_names = list(BOT_REGISTRY.keys())
+    map_choices = list(MAP_REGISTRY.keys()) + [f"random:{f}" for f in FLAVOURS]
+    speed_choices = ["1.0", "1.5", "2.0", "3.0", "5.0"]
+    campaign_levels = [f"{i + 1}. {lvl.name}" for i, lvl in enumerate(CAMPAIGN_LEVELS)]
+
+    return [
+        MenuOption(
+            key="mode",
+            label="Mode",
+            description="Watch: visual game. Campaign: play levels. Headless: fast, no display.",
+            choices=["watch", "campaign", "headless", "tournament"],
+            default_index=0,
+        ),
+        MenuOption(
+            key="map",
+            label="Map",
+            description="Map layout. 'random:X' generates a themed random map.",
+            choices=map_choices,
+            default_index=0,
+        ),
+        MenuOption(
+            key="bot1",
+            label="Player 1 (Blue)",
+            description="Bot strategy for Player 1.",
+            choices=bot_names,
+            default_index=bot_names.index("expander") if "expander" in bot_names else 0,
+        ),
+        MenuOption(
+            key="bot2",
+            label="Player 2 (Red)",
+            description="Bot strategy for Player 2.",
+            choices=bot_names,
+            default_index=bot_names.index("aggressive") if "aggressive" in bot_names else 0,
+        ),
+        MenuOption(
+            key="speed",
+            label="Unit Speed",
+            description="How fast units move across the map.",
+            choices=speed_choices,
+            default_index=speed_choices.index("2.0"),
+        ),
+        MenuOption(
+            key="campaign_start",
+            label="Campaign Start",
+            description="Which campaign level to start from (only used in campaign mode).",
+            choices=campaign_levels,
+            default_index=0,
+        ),
+    ]
+
+
+def _run_gui_menu() -> None:
+    """Show the GUI menu and launch the selected game."""
+    from clauralux.renderer.menu import MenuScreen
+
+    options = _build_menu_options()
+    menu = MenuScreen(options)
+    result = menu.run()
+
+    if result is None:
+        return  # user quit
+
+    mode = result["mode"]
+    map_name = result["map"]
+    bot1 = result["bot1"]
+    bot2 = result["bot2"]
+    speed = float(result["speed"])
+    campaign_start_str = result["campaign_start"]
+    campaign_start = int(campaign_start_str.split(".")[0])
+
+    config = GameConfig(max_ticks=30000, unit_speed=speed)
+
+    if mode == "campaign":
+        # Build a fake args namespace for _run_campaign.
+        import argparse
+
+        fake_args = argparse.Namespace(
+            bot=[bot1],
+            max_ticks=30000,
+            speed=speed,
+            level=campaign_start,
+            headless=False,
+        )
+        _run_campaign(fake_args)
+    elif mode == "watch":
+        bot_names = [bot1, bot2]
+        if map_name.startswith("random:"):
+            flavour = map_name.split(":", 1)[1]
+            config = flavour_config(config, flavour)
+        _run_visual(config, map_name, bot_names, None)
+    elif mode == "headless":
+        bot_names = [bot1, bot2]
+        if map_name.startswith("random:"):
+            flavour = map_name.split(":", 1)[1]
+            config = flavour_config(config, flavour)
+        _run_headless(config, map_name, bot_names, None)
+    elif mode == "tournament":
+        bot_names = [bot1, bot2]
+        if map_name.startswith("random:"):
+            flavour = map_name.split(":", 1)[1]
+            config = flavour_config(config, flavour)
+        _run_tournament(config, map_name, bot_names, 100, None)
 
 
 def _resolve_map(
