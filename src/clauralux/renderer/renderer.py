@@ -59,6 +59,8 @@ class PygameRenderer:
         self._draw_flash_events()
         self._draw_suns(state)
         self._draw_hud(state, intents or {}, speed=speed, paused=paused, bot_names=bot_names or {})
+        if paused and not state.winner:
+            self._draw_pause_overlay(state, intents or {}, bot_names or {})
         pygame.display.flip()
 
     def map_to_screen(self, x: float, y: float) -> tuple[int, int]:
@@ -241,6 +243,117 @@ class PygameRenderer:
             banner_surface = self._font_large.render(banner, True, TEXT)
             banner_rect = banner_surface.get_rect(center=(self._window_width // 2, hud_y + 35))
             self._screen.blit(banner_surface, banner_rect)
+
+    def _draw_pause_overlay(
+        self,
+        state: GameState,
+        intents: dict[PlayerId, str],
+        bot_names: dict[PlayerId, str],
+    ) -> None:
+        """Draw a detailed status overlay when paused."""
+        # Semi-transparent backdrop.
+        overlay = pygame.Surface((self._window_width, self._window_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self._screen.blit(overlay, (0, 0))
+
+        # Title.
+        title = self._font_large.render("PAUSED — Player Status", True, TEXT)
+        title_rect = title.get_rect(center=(self._window_width // 2, 30))
+        self._screen.blit(title, title_rect)
+
+        # Compute per-player stats.
+        cfg = self._config
+        panel_width = min(350, (self._window_width - 60) // max(len(state.players), 1))
+        total_width = panel_width * len(state.players)
+        start_x = (self._window_width - total_width) // 2
+
+        for i, pid in enumerate(state.players):
+            x = start_x + i * panel_width
+            color = get_color(pid)
+            bright = get_bright_color(pid)
+            eliminated = pid in state.eliminated
+
+            my_suns = [s for s in state.suns.values() if s.owner == pid]
+            suns_owned = len(my_suns)
+            total_garrison = sum(int(s.garrison) for s in my_suns)
+            total_levels = sum(s.level for s in my_suns)
+            max_level = max((s.level for s in my_suns), default=0)
+            production_rate = total_levels * cfg.production_per_level
+            units_in_flight = sum(g.count for g in state.unit_groups if g.owner == pid)
+            total_units = total_garrison + units_in_flight
+
+            # Incoming threats: enemy units heading toward this player's suns.
+            my_sun_ids = {s.id for s in my_suns}
+            incoming_threats = sum(
+                g.count
+                for g in state.unit_groups
+                if g.owner != pid and g.target_sun_id in my_sun_ids
+            )
+
+            bot_name = bot_names.get(pid, "???")
+            intent = intents.get(pid, "")
+
+            # Draw panel.
+            y = 60
+            line_h = 20
+
+            # Header.
+            header = f"P{pid}: {bot_name}"
+            header_surface = self._font_large.render(header, True, bright)
+            self._screen.blit(header_surface, (x + 10, y))
+            y += line_h + 8
+
+            if eliminated:
+                elim_surface = self._font.render("ELIMINATED", True, (180, 60, 60))
+                self._screen.blit(elim_surface, (x + 10, y))
+                y += line_h * 2
+                continue
+
+            # Stats lines.
+            lines = [
+                f"Suns: {suns_owned} (max lvl {max_level})",
+                f"Garrison: {total_garrison}",
+                f"In flight: {units_in_flight}",
+                f"Total units: {total_units}",
+                f"Production: {production_rate} per {cfg.production_interval} ticks",
+                f"Incoming threats: {incoming_threats}",
+            ]
+
+            for line in lines:
+                line_surface = self._font.render(line, True, color)
+                self._screen.blit(line_surface, (x + 10, y))
+                y += line_h
+
+            # Sun breakdown.
+            y += 5
+            breakdown_header = self._font.render("Suns:", True, TEXT_DIM)
+            self._screen.blit(breakdown_header, (x + 10, y))
+            y += line_h
+            for sun in sorted(my_suns, key=lambda s: -s.garrison):
+                sun_line = f"  #{sun.id}: lvl {sun.level}, garrison {int(sun.garrison)}"
+                sun_surface = self._font.render(sun_line, True, color)
+                self._screen.blit(sun_surface, (x + 10, y))
+                y += line_h
+
+            # Intent.
+            y += 5
+            thinking_header = self._font.render("Thinking:", True, TEXT_DIM)
+            self._screen.blit(thinking_header, (x + 10, y))
+            y += line_h
+            if intent:
+                # Word-wrap intent text.
+                max_chars = max(15, (panel_width - 20) // 8)
+                while intent:
+                    chunk = intent[:max_chars]
+                    intent = intent[max_chars:]
+                    intent_surface = self._font.render(f"  {chunk}", True, color)
+                    self._screen.blit(intent_surface, (x + 10, y))
+                    y += line_h
+
+        # Footer hint.
+        hint = self._font.render("Press SPACE to resume", True, TEXT_DIM)
+        hint_rect = hint.get_rect(center=(self._window_width // 2, self._window_height - 20))
+        self._screen.blit(hint, hint_rect)
 
     def _update_flash_events(self, state: GameState) -> None:
         """Detect ownership changes and spawn flash animations."""
