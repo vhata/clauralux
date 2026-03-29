@@ -6,9 +6,13 @@ Usage from CLI:
 
 from __future__ import annotations
 
+import os
 import random
 import time
 from concurrent.futures import ProcessPoolExecutor
+
+# Suppress pygame's startup banner in worker processes.
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 from dataclasses import dataclass
 from pathlib import Path
 
