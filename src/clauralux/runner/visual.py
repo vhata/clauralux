@@ -70,8 +70,9 @@ class VisualRunner:
                                 game.apply_actions(player_id, actions)
                     game.tick()
 
-            # Draw.
-            renderer.draw(game.state)
+            # Draw with bot intents.
+            intents = {pid: bot.intent for pid, bot in self._bots.items()}
+            renderer.draw(game.state, intents)
             renderer.tick()
 
         # Notify bots of game end.

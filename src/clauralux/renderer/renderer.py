@@ -12,7 +12,7 @@ from .colors import BACKGROUND, TEXT, TEXT_DIM, get_bright_color, get_color
 
 # Padding around the game map within the window.
 PADDING = 40
-HUD_HEIGHT = 60
+HUD_HEIGHT = 100
 
 
 class PygameRenderer:
@@ -43,7 +43,7 @@ class PygameRenderer:
         """Limit frame rate to config.ticks_per_second."""
         self._clock.tick(self._config.ticks_per_second)
 
-    def draw(self, state: GameState) -> None:
+    def draw(self, state: GameState, intents: dict[PlayerId, str] | None = None) -> None:
         """Draw the full game state."""
         self._update_flash_events(state)
         self._screen.fill(BACKGROUND)
@@ -51,7 +51,7 @@ class PygameRenderer:
         self._draw_unit_groups(state)
         self._draw_flash_events()
         self._draw_suns(state)
-        self._draw_hud(state)
+        self._draw_hud(state, intents or {})
         pygame.display.flip()
 
     def map_to_screen(self, x: float, y: float) -> tuple[int, int]:
@@ -153,7 +153,7 @@ class PygameRenderer:
                 count_text = self._font.render(str(group.count), True, TEXT_DIM)
                 self._screen.blit(count_text, (sx + spread + 2, sy - 6))
 
-    def _draw_hud(self, state: GameState) -> None:
+    def _draw_hud(self, state: GameState, intents: dict[PlayerId, str] | None = None) -> None:
         hud_y = self._window_height - HUD_HEIGHT + 10
 
         # Tick counter.
@@ -199,6 +199,22 @@ class PygameRenderer:
             pygame.draw.rect(self._screen, (40, 40, 50), (bar_x, bar_y, bar_width, 6))
             pygame.draw.rect(self._screen, color, (bar_x, bar_y, fill, 6))
             bar_x += 300
+
+        # Bot intents.
+        if intents:
+            intent_y = bar_y + 12
+            intent_x = 200
+            for player_id in state.players:
+                color = get_color(player_id)
+                intent_text = intents.get(player_id, "")
+                if intent_text:
+                    # Truncate to fit column width.
+                    max_chars = 38
+                    if len(intent_text) > max_chars:
+                        intent_text = intent_text[: max_chars - 1] + "…"
+                    intent_surface = self._font.render(intent_text, True, (*color[:3],))
+                    self._screen.blit(intent_surface, (intent_x, intent_y))
+                intent_x += 300
 
         # Winner banner.
         if state.winner is not None:
