@@ -15,7 +15,7 @@ from clauralux.bots.base import Bot
 from clauralux.engine.config import GameConfig
 from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
-from clauralux.runner.headless import HeadlessRunner
+from clauralux.runner.headless import GameResult, HeadlessRunner
 
 from .genome import PARAM_SPECS, clamp_genome
 
@@ -34,6 +34,34 @@ class Individual:
     fitness: float = 0.0
 
 
+def _score_game(
+    result: GameResult,
+    final_state: GameState,
+    my_id: PlayerId,
+    max_ticks: int,
+) -> float:
+    """Score a single game with richer signal than plain win/draw/loss.
+
+    Components:
+    - Base: 1.0 for win, 0.3 for draw, 0.0 for loss
+    - Speed bonus: up to 0.2 for winning quickly (normalised by max_ticks)
+    - Territory bonus: up to 0.1 for controlling more suns at game end
+    """
+    if result.winner == my_id:
+        base = 1.0
+        speed_bonus = 0.2 * (1.0 - result.ticks / max_ticks)
+    else:
+        base = 0.3 if result.is_draw else 0.0
+        speed_bonus = 0.0
+
+    # Count suns owned at end of game.
+    my_suns = sum(1 for sun in final_state.suns.values() if sun.owner == my_id)
+    total_suns = max(len(final_state.suns), 1)
+    territory_bonus = 0.1 * (my_suns / total_suns)
+
+    return base + speed_bonus + territory_bonus
+
+
 def evaluate_fitness(
     bot_factory: BotFactory,
     opponents: Sequence[BotFactory],
@@ -44,12 +72,13 @@ def evaluate_fitness(
 ) -> float:
     """Evaluate a bot's fitness by playing games against various opponents.
 
-    Returns a score in [0, 1] where 1.0 = won every game.
-    Draws count as 0.3 to mildly reward survival.
+    Returns a score where higher is better. Uses a richer signal than plain
+    win/loss: rewards decisive victories and territorial control.
     """
     if not opponents or not maps:
         return 0.0
 
+    max_ticks = config.max_ticks or 10_000
     total_score = 0.0
     games_played = 0
 
@@ -58,18 +87,16 @@ def evaluate_fitness(
         map_factory = maps[i % len(maps)]
 
         state = map_factory(config)
+        my_id = PlayerId(1)
         bots = {
-            PlayerId(1): bot_factory(PlayerId(1)),
+            my_id: bot_factory(my_id),
             PlayerId(2): opponent(PlayerId(2)),
         }
         runner = HeadlessRunner(config, state, bots)
         result = runner.run()
         games_played += 1
 
-        if result.winner == PlayerId(1):
-            total_score += 1.0
-        elif result.is_draw:
-            total_score += 0.3
+        total_score += _score_game(result, runner.game.state, my_id, max_ticks)
 
     return total_score / max(games_played, 1)
 

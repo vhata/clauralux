@@ -19,10 +19,12 @@ from pathlib import Path
 
 from clauralux.bots.base import Bot
 from clauralux.bots.evolved import EvolvedBot
+from clauralux.bots.noisy import NoisyWrapper
 from clauralux.bots.registry import training_opponents
 from clauralux.engine.config import GameConfig
-from clauralux.engine.mapgen import generate_map
+from clauralux.engine.mapgen import FLAVOURS, generate_map
 from clauralux.engine.maps import two_player_simple
+from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
 
 from .evolution import (
@@ -59,6 +61,9 @@ class TrainingConfig:
     seed: int = 42
 
 
+_MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
+
+
 def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None]) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
@@ -71,13 +76,15 @@ def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None])
     def bot_factory(pid: PlayerId) -> Bot:
         return EvolvedBot(genome=genome)
 
-    def _make_opponent(cls: type[Bot]) -> Callable[[PlayerId], Bot]:
+    def _make_opponent(cls: type[Bot], seed: int) -> Callable[[PlayerId], Bot]:
         def factory(pid: PlayerId) -> Bot:
-            return cls()
+            return NoisyWrapper(cls(), drop_prob=0.1, seed=seed)
 
         return factory
 
-    opponents = [_make_opponent(cls) for cls in OPPONENT_BOTS]
+    opponents: list[Callable[[PlayerId], Bot]] = [
+        _make_opponent(cls, rng_seed + i) for i, cls in enumerate(OPPONENT_BOTS)
+    ]
     # Also play against the previous best evolved bot, if available.
     if prior_best is not None:
         prior_genome = prior_best
@@ -87,10 +94,16 @@ def _evaluate_individual(args: tuple[list[float], int, int, list[float] | None])
 
         opponents.append(_prior_factory)
 
-    maps = [
+    # Use all map flavours plus the fixed map, with seed variation.
+    def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
+        def factory(cfg: GameConfig) -> GameState:
+            return generate_map(cfg, flavour, 2, seed=seed)
+
+        return factory
+
+    maps: list[Callable[[GameConfig], GameState]] = [
         two_player_simple,
-        lambda cfg: generate_map(cfg, "strategic", 2, seed=rng_seed),
-        lambda cfg: generate_map(cfg, "rush", 2, seed=rng_seed + 1),
+        *(_make_map(f, rng_seed + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
     ]
 
     return evaluate_fitness(
