@@ -13,7 +13,13 @@ from clauralux.bots.random_bot import RandomBot
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
 from clauralux.engine.config import GameConfig
 from clauralux.engine.mapgen import FLAVOURS, flavour_config, generate_map
-from clauralux.engine.maps import three_player_triangle, two_player_simple
+from clauralux.engine.maps import (
+    five_player_pentagon,
+    four_player_cross,
+    six_player_hex,
+    three_player_triangle,
+    two_player_simple,
+)
 from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
 from clauralux.renderer.menu import MenuOption
@@ -31,6 +37,18 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
 MAP_REGISTRY: dict[str, MapFactory] = {
     "2p": two_player_simple,
     "3p": three_player_triangle,
+    "4p": four_player_cross,
+    "5p": five_player_pentagon,
+    "6p": six_player_hex,
+}
+
+# Player count for each map. Random maps derive from --players or bot count.
+MAP_PLAYER_COUNTS: dict[str, int] = {
+    "2p": 2,
+    "3p": 3,
+    "4p": 4,
+    "5p": 5,
+    "6p": 6,
 }
 
 FLAVOUR_NAMES = list(FLAVOURS.keys())
@@ -157,18 +175,32 @@ def main() -> None:
         _run_tournament(config, map_name, bot_names, args.games, args.seed)
 
 
+def _get_player_count_for_map(map_value: str) -> int:
+    """Derive player count from a map selection."""
+    if map_value in MAP_PLAYER_COUNTS:
+        return MAP_PLAYER_COUNTS[map_value]
+    # Random maps: look at the "players" option, default to 2.
+    return 2
+
+
 def _build_menu_options() -> list[MenuOption]:
     """Build menu options dynamically from registries."""
+    from clauralux.renderer.menu import PLAYER_COLOUR_NAMES
+
     bot_names = list(BOT_REGISTRY.keys())
     map_choices = list(MAP_REGISTRY.keys()) + [f"random:{f}" for f in FLAVOURS]
     speed_choices = ["1.0", "1.5", "2.0", "3.0", "5.0"]
+    player_count_choices = ["2", "3", "4", "5", "6"]
     campaign_levels = [f"{i + 1}. {lvl.name}" for i, lvl in enumerate(CAMPAIGN_LEVELS)]
 
-    return [
+    # Default bot assignments: cycle through available bots.
+    default_bots = ["expander", "aggressive", "random", "passive", "expander", "aggressive"]
+
+    options: list[MenuOption] = [
         MenuOption(
             key="mode",
             label="Mode",
-            description="Watch: visual game. Campaign: play levels. Headless: fast, no display.",
+            description="Watch: visual game. Campaign: play levels. Headless: fast.",
             choices=["watch", "campaign", "headless", "tournament"],
             default_index=0,
         ),
@@ -180,34 +212,65 @@ def _build_menu_options() -> list[MenuOption]:
             default_index=0,
         ),
         MenuOption(
-            key="bot1",
-            label="Player 1 (Blue)",
-            description="Bot strategy for Player 1.",
-            choices=bot_names,
-            default_index=bot_names.index("expander") if "expander" in bot_names else 0,
-        ),
-        MenuOption(
-            key="bot2",
-            label="Player 2 (Red)",
-            description="Bot strategy for Player 2.",
-            choices=bot_names,
-            default_index=bot_names.index("aggressive") if "aggressive" in bot_names else 0,
-        ),
-        MenuOption(
-            key="speed",
-            label="Unit Speed",
-            description="How fast units move across the map.",
-            choices=speed_choices,
-            default_index=speed_choices.index("2.0"),
-        ),
-        MenuOption(
-            key="campaign_start",
-            label="Campaign Start",
-            description="Which campaign level to start from (only used in campaign mode).",
-            choices=campaign_levels,
+            key="players",
+            label="Players (random)",
+            description="Number of players for random maps. Ignored for fixed maps.",
+            choices=player_count_choices,
             default_index=0,
+            visible_when=lambda v: v["map"].startswith("random:"),
         ),
     ]
+
+    # Bot selectors for up to 6 players.
+    for i in range(6):
+        player_num = i + 1
+        colour = PLAYER_COLOUR_NAMES.get(player_num, f"P{player_num}")
+        default_idx = bot_names.index(default_bots[i]) if default_bots[i] in bot_names else 0
+
+        def make_visible(n: int) -> Callable[[dict[str, str]], bool]:
+            def check(v: dict[str, str]) -> bool:
+                if v["mode"] == "campaign":
+                    return n == 1  # campaign only needs P1
+                map_val = v["map"]
+                if map_val in MAP_PLAYER_COUNTS:
+                    return n <= MAP_PLAYER_COUNTS[map_val]
+                # Random map: use the players option.
+                return n <= int(v.get("players", "2"))
+
+            return check
+
+        options.append(
+            MenuOption(
+                key=f"bot{player_num}",
+                label=f"Player {player_num} ({colour})",
+                description=f"Bot strategy for Player {player_num} ({colour}).",
+                choices=bot_names,
+                default_index=default_idx,
+                visible_when=make_visible(player_num),
+            )
+        )
+
+    options.extend(
+        [
+            MenuOption(
+                key="speed",
+                label="Unit Speed",
+                description="How fast units move across the map.",
+                choices=speed_choices,
+                default_index=speed_choices.index("2.0"),
+            ),
+            MenuOption(
+                key="campaign_start",
+                label="Campaign Start",
+                description="Which campaign level to start from.",
+                choices=campaign_levels,
+                default_index=0,
+                visible_when=lambda v: v["mode"] == "campaign",
+            ),
+        ]
+    )
+
+    return options
 
 
 def _run_gui_menu() -> None:
@@ -223,20 +286,30 @@ def _run_gui_menu() -> None:
 
     mode = result["mode"]
     map_name = result["map"]
-    bot1 = result["bot1"]
-    bot2 = result["bot2"]
     speed = float(result["speed"])
-    campaign_start_str = result["campaign_start"]
-    campaign_start = int(campaign_start_str.split(".")[0])
+
+    # Determine player count and collect bot names.
+    if map_name in MAP_PLAYER_COUNTS:
+        num_players = MAP_PLAYER_COUNTS[map_name]
+    elif map_name.startswith("random:"):
+        num_players = int(result.get("players", "2"))
+    else:
+        num_players = 2
+
+    bot_names = [result[f"bot{i + 1}"] for i in range(num_players)]
 
     config = GameConfig(max_ticks=30000, unit_speed=speed)
+    if map_name.startswith("random:"):
+        flavour = map_name.split(":", 1)[1]
+        config = flavour_config(config, flavour)
 
     if mode == "campaign":
-        # Build a fake args namespace for _run_campaign.
         import argparse
 
+        campaign_start_str = result.get("campaign_start", "1. First Light")
+        campaign_start = int(campaign_start_str.split(".")[0])
         fake_args = argparse.Namespace(
-            bot=[bot1],
+            bot=[bot_names[0]],
             max_ticks=30000,
             speed=speed,
             level=campaign_start,
@@ -244,22 +317,10 @@ def _run_gui_menu() -> None:
         )
         _run_campaign(fake_args)
     elif mode == "watch":
-        bot_names = [bot1, bot2]
-        if map_name.startswith("random:"):
-            flavour = map_name.split(":", 1)[1]
-            config = flavour_config(config, flavour)
         _run_visual(config, map_name, bot_names, None)
     elif mode == "headless":
-        bot_names = [bot1, bot2]
-        if map_name.startswith("random:"):
-            flavour = map_name.split(":", 1)[1]
-            config = flavour_config(config, flavour)
         _run_headless(config, map_name, bot_names, None)
     elif mode == "tournament":
-        bot_names = [bot1, bot2]
-        if map_name.startswith("random:"):
-            flavour = map_name.split(":", 1)[1]
-            config = flavour_config(config, flavour)
         _run_tournament(config, map_name, bot_names, 100, None)
 
 
