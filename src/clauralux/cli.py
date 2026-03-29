@@ -44,6 +44,18 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
     "evolved": EvolvedBot,
 }
 
+BOT_DESCRIPTIONS: dict[str, str] = {
+    "passive": "Does nothing. Just sits there.",
+    "random": "Picks actions by dice roll. Chaotic and bad.",
+    "aggressive": "Waits until it can overwhelm the weakest target, then sends everything.",
+    "expander": "Grabs neutrals first, upgrades economy, attacks enemies last.",
+    "turtle": "Upgrades all suns to max, builds huge garrisons, then crushes.",
+    "rush": "Constant early pressure — sends units every 20 ticks at the nearest target.",
+    "sniper": "Ignores neutrals. Targets the weakest player's weakest sun to eliminate them.",
+    "opportunist": "Watches for low garrisons and pounces. Upgrades when nothing's weak enough.",
+    "evolved": "Evolved strategy — trained by playing thousands of games against all other bots.",
+}
+
 MAP_REGISTRY: dict[str, MapFactory] = {
     "2p": two_player_simple,
     "3p": three_player_triangle,
@@ -339,11 +351,14 @@ def _build_menu_options() -> list[MenuOption]:
 
             return check
 
+        def make_bot_description(bot_name: str) -> str:
+            return BOT_DESCRIPTIONS.get(bot_name, f"Bot strategy: {bot_name}")
+
         options.append(
             MenuOption(
                 key=f"bot{player_num}",
                 label=f"Player {player_num} ({colour})",
-                description=f"Bot strategy for Player {player_num} ({colour}).",
+                description=make_bot_description,
                 choices=bot_names,
                 default_index=default_idx,
                 visible_when=make_visible(player_num),

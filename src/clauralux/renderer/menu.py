@@ -26,7 +26,7 @@ class MenuOption:
 
     key: str  # internal identifier
     label: str  # display name
-    description: str  # help text shown when selected
+    description: str | Callable[[str], str]  # static text, or callback(current_value) -> text
     choices: list[str]  # available values to cycle through
     default_index: int = 0  # index into choices
     current_index: int = field(init=False)
@@ -39,6 +39,12 @@ class MenuOption:
     @property
     def value(self) -> str:
         return self.choices[self.current_index]
+
+    @property
+    def current_description(self) -> str:
+        if callable(self.description):
+            return self.description(self.value)
+        return self.description
 
     def next(self) -> None:
         self.current_index = (self.current_index + 1) % len(self.choices)
@@ -171,7 +177,7 @@ class MenuScreen:
             pygame.draw.line(
                 self._screen, TEXT_DIM, (60, desc_y - 10), (self._width - 60, desc_y - 10)
             )
-            desc = visible[self._selected].description
+            desc = visible[self._selected].current_description
             desc_surface = self._font_small.render(desc, True, TEXT_DIM)
             self._screen.blit(desc_surface, (60, desc_y))
 
