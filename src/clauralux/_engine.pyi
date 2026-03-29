@@ -99,3 +99,49 @@ class GameState:
     def set_sun(self, id: SunId, sun: Sun) -> None: ...
     def add_eliminated(self, player_id: PlayerId) -> None: ...
     def get_sun(self, id: SunId) -> Sun | None: ...
+
+class SendUnits:
+    source_sun_id: SunId
+    target_sun_id: SunId
+    count: int
+    def __init__(self, source_sun_id: SunId, target_sun_id: SunId, count: int) -> None: ...
+
+class UpgradeSun:
+    sun_id: SunId
+    def __init__(self, sun_id: SunId) -> None: ...
+
+class SunView:
+    id: SunId
+    position: Position
+    owner: PlayerId
+    level: int
+    garrison: int
+    def __init__(
+        self, id: SunId, position: Position, owner: PlayerId, level: int, garrison: int
+    ) -> None: ...
+
+class UnitGroupView:
+    owner: PlayerId
+    count: int
+    position: Position
+    target_sun_id: SunId
+    def __init__(
+        self, owner: PlayerId, count: int, position: Position, target_sun_id: SunId
+    ) -> None: ...
+
+class GameView:
+    my_id: PlayerId
+    tick: Tick
+    suns: tuple[SunView, ...]
+    unit_groups: tuple[UnitGroupView, ...]
+    config: GameConfig
+    players: tuple[PlayerId, ...]
+    eliminated: frozenset[PlayerId]
+    def my_suns(self) -> tuple[SunView, ...]: ...
+    def enemy_suns(self) -> tuple[SunView, ...]: ...
+    def neutral_suns(self) -> tuple[SunView, ...]: ...
+    def sun_by_id(self, sun_id: SunId) -> SunView | None: ...
+    def my_unit_groups(self) -> tuple[UnitGroupView, ...]: ...
+    def enemy_unit_groups(self) -> tuple[UnitGroupView, ...]: ...
+    @staticmethod
+    def from_state(state: GameState, player_id: PlayerId, config: GameConfig) -> GameView: ...

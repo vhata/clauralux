@@ -1,8 +1,10 @@
 use pyo3::prelude::*;
 
+mod actions;
 mod config;
 mod state;
 mod types;
+mod view;
 
 /// The Clauralux game engine, implemented in Rust for performance.
 #[pymodule]
@@ -17,6 +19,15 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<state::Sun>()?;
     m.add_class::<state::UnitGroup>()?;
     m.add_class::<state::GameState>()?;
+
+    // Actions
+    m.add_class::<actions::SendUnits>()?;
+    m.add_class::<actions::UpgradeSun>()?;
+
+    // Views
+    m.add_class::<view::SunView>()?;
+    m.add_class::<view::UnitGroupView>()?;
+    m.add_class::<view::GameView>()?;
 
     Ok(())
 }
