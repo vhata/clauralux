@@ -8,8 +8,12 @@ from collections.abc import Callable
 from clauralux.bots.aggressive import AggressiveBot
 from clauralux.bots.base import Bot
 from clauralux.bots.expander import ExpanderBot
+from clauralux.bots.opportunist import OpportunistBot
 from clauralux.bots.passive import PassiveBot
 from clauralux.bots.random_bot import RandomBot
+from clauralux.bots.rush import RushBot
+from clauralux.bots.sniper import SniperBot
+from clauralux.bots.turtle import TurtleBot
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
 from clauralux.engine.config import GameConfig
 from clauralux.engine.mapgen import FLAVOURS, flavour_config, generate_map
@@ -32,6 +36,10 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
     "random": RandomBot,
     "aggressive": AggressiveBot,
     "expander": ExpanderBot,
+    "turtle": TurtleBot,
+    "rush": RushBot,
+    "sniper": SniperBot,
+    "opportunist": OpportunistBot,
 }
 
 MAP_REGISTRY: dict[str, MapFactory] = {
