@@ -43,7 +43,7 @@ def _score_game(
     """Score a single game with richer signal than plain win/draw/loss.
 
     Components:
-    - Base: 1.0 for win, 0.3 for draw, 0.0 for loss
+    - Base: 1.0 for win, 0.15 for draw, 0.0 for loss
     - Speed bonus: up to 0.2 for winning quickly (normalised by max_ticks)
     - Territory bonus: up to 0.1 for controlling more suns at game end
     """
@@ -51,7 +51,7 @@ def _score_game(
         base = 1.0
         speed_bonus = 0.2 * (1.0 - result.ticks / max_ticks)
     else:
-        base = 0.3 if result.is_draw else 0.0
+        base = 0.15 if result.is_draw else 0.0
         speed_bonus = 0.0
 
     # Count suns owned at end of game.
@@ -153,7 +153,7 @@ def gaussian_mutate(
         for i in range(len(genome)):
             if rng.random() < mutation_prob:
                 result[i] += rng.gauss(0.0, sigma)
-        return result
+        return [max(-NEURAL_WEIGHT_RANGE, min(NEURAL_WEIGHT_RANGE, v)) for v in result]
 
 
 def create_next_generation(
