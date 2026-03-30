@@ -1,6 +1,6 @@
 # Clauralux
 
-An Auralux clone built for bot strategy development. The game engine is completely decoupled from rendering — write bots, pit them against each other headlessly at full speed, or watch them fight in a pygame window.
+An Auralux clone built for bot strategy development. The game engine is completely decoupled from rendering — write bots, pit them against each other headlessly at full speed, or watch them fight in a pygame window with sports commentary.
 
 ## How the Game Works
 
@@ -18,8 +18,12 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
-- **9 built-in bots** — passive, random, aggressive, expander, turtle, rush, sniper, opportunist, evolved (each with strategic intent narration)
-- **Evolutionary training** — train an evolved bot by running `clauralux train` to optimise 26 parameters against all other bots
+- **14 built-in bots** — passive, random, aggressive, expander, turtle, rush, sniper, opportunist, swarm, coordinator, reactive, economic, baiter, evolved (each with strategic intent narration)
+- **Evolutionary training** — train an evolved bot by running `clauralux train` to optimise 25 parameters against all other bots, with difficulty-weighted opponents and stagnation resets
+- **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
+- **Benchmark** — scorecard showing evolved bot's win rate against every opponent across all maps
+- **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
+- **Replay system** — record, save, load, and play back games
 - **Themed random maps** — strategic, rush, chokepoint, swarm
 - **18-level campaign** — gradual difficulty progression from passive to dual-aggressive enemies
 - **Tournament system** — run N games and compare bot win rates
@@ -54,37 +58,59 @@ Just run `uv run clauralux` with no arguments to get a pygame menu where you pic
 
 ```bash
 # Watch a game
-uv run clauralux watch --bot aggressive --bot expander
+clauralux watch --bot aggressive --bot expander
 
 # Watch a random rush map
-uv run clauralux watch --map random:rush --bot aggressive --bot expander
+clauralux watch --map random:rush --bot aggressive --bot expander
 
 # Run headless (fast, no display)
-uv run clauralux headless --bot expander --bot aggressive
+clauralux headless --bot expander --bot aggressive
 
 # Tournament: 100 games, compare win rates
-uv run clauralux tournament --bot aggressive --bot expander --games 100
+clauralux tournament --bot aggressive --bot expander --games 100
 
 # Campaign: play through 18 levels
-uv run clauralux campaign --bot expander
+clauralux campaign --bot expander
 
 # Campaign: start from level 10, headless
-uv run clauralux campaign --bot aggressive --level 10 --headless
+clauralux campaign --bot aggressive --level 10 --headless
 
-# Train the evolved bot (runs evolutionary optimisation)
-uv run clauralux train
+# Record a game for replay
+clauralux watch --bot evolved --bot sniper --record game.json
 
-# Quick training run
-uv run clauralux train --population 20 --generations 20 --games-per-eval 10
+# Play back a recorded game
+clauralux replay game.json
+```
+
+### Training
+
+```bash
+# Train the evolved bot (default: pop=80, gens=200, 40 games/eval)
+clauralux train
 
 # Train from scratch (ignore existing weights)
-uv run clauralux train --from-scratch
+clauralux train --from-scratch
+
+# Self-play: train only against other evolved bots
+clauralux train --self-play
+
+# Quick training run
+clauralux train --population 20 --generations 20 --games-per-eval 10
+
+# Megatrain: intensive 3-phase training with automatic benchmarking
+clauralux megatrain --from-scratch
+
+# Benchmark the evolved bot against all opponents
+clauralux benchmark
+clauralux benchmark --benchmark-games 100
 ```
+
+Training automatically runs a before/after benchmark and shows a comparison table.
 
 ### Visual Controls
 
-- **Space** — pause/unpause (shows detailed player status overlay when paused)
-- **Up/Down arrows** — speed up/slow down (2x increments)
+- **Space / Enter** — pause/unpause (shows detailed player status overlay when paused)
+- **Up/Down arrows** — speed up/slow down (2x increments, up to 64x)
 - **Q/Escape** — quit
 
 ## Writing a Bot
@@ -109,33 +135,37 @@ class MyBot(Bot):
         return actions
 ```
 
-Add it to `BOT_REGISTRY` in `cli.py` and it appears in the GUI menu automatically.
+Add it to `BOT_REGISTRY` in `bots/registry.py` and it appears in the GUI menu automatically.
 
 ## Project Structure
 
 ```
 src/clauralux/
-    engine/         # Game simulation (zero deps)
-        game.py     # Tick-based engine
-        config.py   # All tunable parameters
-        mapgen.py   # Themed random map generation
-        campaign.py # 18-level campaign definitions
-    bots/           # Bot framework + 9 strategies
-        base.py     # Abstract Bot class with intent narration
-        evolved.py  # Parameterized bot with 26 evolvable weights
-    training/       # Evolutionary training system
-        genome.py   # Parameter definitions and serialization
-        evolution.py # Selection, crossover, mutation
-        trainer.py  # Training loop with parallel evaluation
-    renderer/       # Pygame visualization
-        renderer.py # Game renderer
-        menu.py     # Data-driven GUI menu
-    runner/         # Game execution
-        headless.py # Fast bot-vs-bot
-        visual.py   # Pygame display
-        tournament.py # Multi-game comparison
-    cli.py          # CLI + GUI entry point
-tests/              # 84 tests
+    engine/             # Game simulation (zero deps)
+        game.py         # Tick-based engine
+        config.py       # All tunable parameters
+        mapgen.py       # Themed random map generation
+        campaign.py     # 18-level campaign definitions
+    bots/               # Bot framework + 14 strategies
+        base.py         # Abstract Bot class with intent narration
+        registry.py     # Central bot registry
+        evolved.py      # Parameterized bot with 25 evolvable weights
+    training/           # Evolutionary training system
+        genome.py       # Parameter definitions and serialization
+        evolution.py    # Selection, crossover, mutation, weighted fitness
+        trainer.py      # Training loop with parallel eval, self-play, stagnation resets
+    renderer/           # Pygame visualization
+        renderer.py     # Game renderer
+        commentary.py   # Sports commentary overlay with event detection
+        menu.py         # Data-driven GUI menu
+    runner/             # Game execution
+        headless.py     # Fast bot-vs-bot
+        visual.py       # Pygame display with commentary integration
+        tournament.py   # Multi-game comparison
+    replay/             # Game recording and playback
+    cli.py              # CLI + GUI entry point
+rust/                   # Rust game engine (compiled via PyO3/maturin)
+tests/                  # 127 tests
 ```
 
 ## Development
