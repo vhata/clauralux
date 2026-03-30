@@ -26,7 +26,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
 - **Replay system** — record, save, load, and play back games
 - **Themed random maps** — strategic, rush, chokepoint, swarm
-- **8 hand-crafted fun maps** — grid, fortress, bridge, ring, corridor, archipelago, spiral, diamond
+- **12 hand-crafted themed maps** — 2-player (grid, fortress, bridge, ring, corridor, archipelago, spiral, diamond) and multi-player (crossroads, arena, web, kingdoms)
 - **24-level campaign** — 4 acts teaching mechanics, introducing each bot, and scaling to multi-front warfare. Play as a human with mouse controls.
 - **Tournament system** — run N games and compare bot win rates
 - **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions and settings persistence
@@ -55,18 +55,22 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 
 ## Maps
 
-Standard maps scale by player count (2p through 6p). The fun maps are all 2-player with unique strategic puzzles:
+Standard maps scale by player count (2p through 6p). Themed maps have unique strategic puzzles:
 
-| Map | Description |
-|-----|-------------|
-| **grid** | 5x4 grid of suns. Players in opposite corners. Control the lines. |
-| **fortress** | Heavily fortified center sun surrounded by a ring. Time your assault. |
-| **bridge** | Two clusters connected by a narrow chain. Hold the bridge. |
-| **ring** | 12 suns in a circle with a big center prize. Clockwise or counter? |
-| **corridor** | Two long rows of suns. Head-to-head slugfest, nowhere to hide. |
-| **archipelago** | Island clusters with gaps between them. Leap between islands. |
-| **spiral** | Suns spiraling outward from a fortified center. Race in or out? |
-| **diamond** | Diamond shape with fortified center and flanking routes. |
+| Map | Players | Description |
+|-----|---------|-------------|
+| **grid** | 2 | 5x4 grid of suns. Opposite corners. Control the lines. |
+| **fortress** | 2 | Heavily fortified center surrounded by a ring. Time your assault. |
+| **bridge** | 2 | Two clusters connected by a narrow chain. Hold the bridge. |
+| **ring** | 2 | 12 suns in a circle with a big center prize. Clockwise or counter? |
+| **corridor** | 2 | Two long rows. Head-to-head slugfest, nowhere to hide. |
+| **archipelago** | 2 | Island clusters with gaps. Leap between islands. |
+| **spiral** | 2 | Suns spiraling outward from a fortified center. Race in or out? |
+| **diamond** | 2 | Diamond shape with fortified center and flanking routes. |
+| **crossroads** | 3 | Three paths converge on a fortified center. |
+| **arena** | 4 | Corners with a ring around a massive center fortress. |
+| **web** | 3 | Dense neutral field connecting three players. |
+| **kingdoms** | 4 | Each player starts with a cluster. Contest the middle. |
 
 ## Prerequisites
 
@@ -204,7 +208,7 @@ src/clauralux/
         game.py         # Tick-based engine
         config.py       # All tunable parameters
         mapgen.py       # Themed random map generation
-        maps.py         # 13 hand-crafted maps (standard + themed)
+        maps.py         # 17 hand-crafted maps (5 standard + 12 themed)
         campaign.py     # 24-level campaign across 4 acts
     bots/               # Bot framework + 16 strategies (including human)
         base.py         # Abstract Bot class with intent narration
