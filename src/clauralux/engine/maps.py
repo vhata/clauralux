@@ -153,7 +153,7 @@ def six_player_hex(config: GameConfig) -> GameState:
     return GameState(suns=dict(suns_list), players=players)
 
 
-# ── Fun / themed maps (2-player) ────────────────────────────────────────
+# ── Fun / themed maps ────────────────────────────────────────────────────
 
 
 def the_grid(config: GameConfig) -> GameState:
@@ -359,3 +359,118 @@ def the_diamond(config: GameConfig) -> GameState:
         _sun(10, w * 0.65, h * 0.5, NEUTRAL, ng),
     ]
     return GameState(suns=dict(suns_list), players=[p1, p2])
+
+
+# ── Multi-player themed maps ────────────────────────────────────────────
+
+
+def the_crossroads(config: GameConfig) -> GameState:
+    """3 players at the edges, paths converge on a fortified center."""
+    players = [PlayerId(i + 1) for i in range(3)]
+    w, h = config.map_width, config.map_height
+    g, ng = config.default_player_garrison, config.default_neutral_garrison
+
+    suns_list: list[tuple[SunId, Sun]] = [
+        _sun(0, w * 0.5, h * 0.05, players[0], g),
+        _sun(1, w * 0.08, h * 0.9, players[1], g),
+        _sun(2, w * 0.92, h * 0.9, players[2], g),
+        # Paths toward center.
+        _sun(3, w * 0.5, h * 0.25, NEUTRAL, ng),
+        _sun(4, w * 0.25, h * 0.65, NEUTRAL, ng),
+        _sun(5, w * 0.75, h * 0.65, NEUTRAL, ng),
+        # Center prize.
+        _sun(6, w * 0.5, h * 0.5, NEUTRAL, ng * 3),
+        # Flanks between players.
+        _sun(7, w * 0.3, h * 0.4, NEUTRAL, ng),
+        _sun(8, w * 0.7, h * 0.4, NEUTRAL, ng),
+        _sun(9, w * 0.5, h * 0.75, NEUTRAL, ng),
+    ]
+    return GameState(suns=dict(suns_list), players=players)
+
+
+def the_arena(config: GameConfig) -> GameState:
+    """4 players in corners, ring of suns around a massive center."""
+    players = [PlayerId(i + 1) for i in range(4)]
+    w, h = config.map_width, config.map_height
+    g, ng = config.default_player_garrison, config.default_neutral_garrison
+    cx, cy = w * 0.5, h * 0.5
+
+    suns_list: list[tuple[SunId, Sun]] = [
+        _sun(0, w * 0.1, h * 0.1, players[0], g),
+        _sun(1, w * 0.9, h * 0.1, players[1], g),
+        _sun(2, w * 0.9, h * 0.9, players[2], g),
+        _sun(3, w * 0.1, h * 0.9, players[3], g),
+        # Center fortress.
+        _sun(4, cx, cy, NEUTRAL, ng * 4),
+    ]
+    sid = 5
+    # Ring around center.
+    for i in range(8):
+        angle = 2 * math.pi * i / 8
+        x = cx + min(w, h) * 0.25 * math.cos(angle)
+        y = cy + min(w, h) * 0.25 * math.sin(angle)
+        suns_list.append(_sun(sid, x, y, NEUTRAL, ng))
+        sid += 1
+    # Midpoints between corners.
+    for mx, my in [(0.5, 0.1), (0.9, 0.5), (0.5, 0.9), (0.1, 0.5)]:
+        suns_list.append(_sun(sid, w * mx, h * my, NEUTRAL, ng))
+        sid += 1
+
+    return GameState(suns=dict(suns_list), players=players)
+
+
+def the_web(config: GameConfig) -> GameState:
+    """3 players connected by a web of paths through a dense neutral field."""
+    players = [PlayerId(i + 1) for i in range(3)]
+    w, h = config.map_width, config.map_height
+    g, ng = config.default_player_garrison, config.default_neutral_garrison
+
+    suns_list: list[tuple[SunId, Sun]] = [
+        _sun(0, w * 0.5, h * 0.08, players[0], g),
+        _sun(1, w * 0.08, h * 0.85, players[1], g),
+        _sun(2, w * 0.92, h * 0.85, players[2], g),
+        # Dense neutral web.
+        _sun(3, w * 0.35, h * 0.25, NEUTRAL, ng),
+        _sun(4, w * 0.65, h * 0.25, NEUTRAL, ng),
+        _sun(5, w * 0.2, h * 0.5, NEUTRAL, ng),
+        _sun(6, w * 0.5, h * 0.42, NEUTRAL, ng * 1.5),
+        _sun(7, w * 0.8, h * 0.5, NEUTRAL, ng),
+        _sun(8, w * 0.3, h * 0.65, NEUTRAL, ng),
+        _sun(9, w * 0.5, h * 0.65, NEUTRAL, ng * 1.5),
+        _sun(10, w * 0.7, h * 0.65, NEUTRAL, ng),
+        _sun(11, w * 0.5, h * 0.85, NEUTRAL, ng),
+    ]
+    return GameState(suns=dict(suns_list), players=players)
+
+
+def the_kingdoms(config: GameConfig) -> GameState:
+    """4 players each start with a small cluster. Expand or invade?"""
+    players = [PlayerId(i + 1) for i in range(4)]
+    w, h = config.map_width, config.map_height
+    g, ng = config.default_player_garrison, config.default_neutral_garrison
+
+    suns_list: list[tuple[SunId, Sun]] = [
+        # P1 kingdom (top-left).
+        _sun(0, w * 0.15, h * 0.15, players[0], g),
+        _sun(1, w * 0.25, h * 0.1, NEUTRAL, ng * 0.5),
+        _sun(2, w * 0.1, h * 0.25, NEUTRAL, ng * 0.5),
+        # P2 kingdom (top-right).
+        _sun(3, w * 0.85, h * 0.15, players[1], g),
+        _sun(4, w * 0.75, h * 0.1, NEUTRAL, ng * 0.5),
+        _sun(5, w * 0.9, h * 0.25, NEUTRAL, ng * 0.5),
+        # P3 kingdom (bottom-right).
+        _sun(6, w * 0.85, h * 0.85, players[2], g),
+        _sun(7, w * 0.75, h * 0.9, NEUTRAL, ng * 0.5),
+        _sun(8, w * 0.9, h * 0.75, NEUTRAL, ng * 0.5),
+        # P4 kingdom (bottom-left).
+        _sun(9, w * 0.15, h * 0.85, players[3], g),
+        _sun(10, w * 0.25, h * 0.9, NEUTRAL, ng * 0.5),
+        _sun(11, w * 0.1, h * 0.75, NEUTRAL, ng * 0.5),
+        # Contested no-man's-land.
+        _sun(12, w * 0.5, h * 0.5, NEUTRAL, ng * 2),
+        _sun(13, w * 0.5, h * 0.25, NEUTRAL, ng),
+        _sun(14, w * 0.5, h * 0.75, NEUTRAL, ng),
+        _sun(15, w * 0.25, h * 0.5, NEUTRAL, ng),
+        _sun(16, w * 0.75, h * 0.5, NEUTRAL, ng),
+    ]
+    return GameState(suns=dict(suns_list), players=players)
