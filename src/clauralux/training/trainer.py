@@ -19,6 +19,7 @@ from pathlib import Path
 
 from clauralux.bots.base import Bot
 from clauralux.bots.evolved import EvolvedBot
+from clauralux.bots.neural import NeuralBot
 from clauralux.bots.noisy import NoisyWrapper
 from clauralux.bots.registry import training_opponents_with_weights
 from clauralux.engine.config import GameConfig
@@ -38,6 +39,9 @@ from .genome import (
     default_genome,
     genome_to_phase_dicts,
     load_genome,
+    neural_load_genome,
+    neural_random_genome,
+    neural_save_genome,
     random_genome,
     save_genome,
 )
@@ -61,6 +65,7 @@ class TrainingConfig:
     output_path: str = "data/evolved_weights.json"
     from_scratch: bool = False
     self_play: bool = False  # only train against other evolved bots
+    neural: bool = False  # use neural net bot instead of phase-based evolved
     seed: int = 42
     hall_of_fame_interval: int = 5  # save best genome every N generations
     stagnation_limit: int = 15  # reset sigma after N gens without improvement
@@ -71,18 +76,20 @@ _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
 
 
 def _evaluate_individual(
-    args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]]],
+    args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]], bool],
 ) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
     Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes,
-    self_play, peer_genomes).
+    self_play, peer_genomes, neural).
     """
-    genome, games_per_eval, rng_seed, hall_of_fame, self_play, peers = args
+    genome, games_per_eval, rng_seed, hall_of_fame, self_play, peers, neural = args
 
     config = GameConfig(max_ticks=10_000)
 
     def bot_factory(pid: PlayerId) -> Bot:
+        if neural:
+            return NeuralBot(genome=genome)
         return EvolvedBot(genome=genome)
 
     def _make_opponent(cls: type[Bot], seed: int) -> Callable[[PlayerId], Bot]:
@@ -99,12 +106,13 @@ def _evaluate_individual(
             opponents.append(_make_opponent(cls, rng_seed + i))
             opponent_weights.append(weight)
 
-    # Play against hall-of-fame evolved bots (previous best genomes).
+    # Play against hall-of-fame bots (previous best genomes).
+    bot_cls: type[Bot] = NeuralBot if neural else EvolvedBot
     for hof_genome in hall_of_fame:
         g = hof_genome  # capture for closure
 
-        def _hof_factory(pid: PlayerId, g: list[float] = g) -> Bot:
-            return EvolvedBot(genome=g)
+        def _hof_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
+            return cls(genome=g)  # type: ignore[call-arg]
 
         opponents.append(_hof_factory)
         opponent_weights.append(1.0)
@@ -113,8 +121,8 @@ def _evaluate_individual(
     for peer_genome in peers:
         g = peer_genome
 
-        def _peer_factory(pid: PlayerId, g: list[float] = g) -> Bot:
-            return EvolvedBot(genome=g)
+        def _peer_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
+            return cls(genome=g)  # type: ignore[call-arg]
 
         opponents.append(_peer_factory)
         opponent_weights.append(1.0)
@@ -149,23 +157,39 @@ def train(config: TrainingConfig) -> list[float]:
     output_path = Path(config.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Helpers based on neural mode.
+    def _make_default() -> list[float]:
+        return neural_random_genome(rng) if config.neural else default_genome()
+
+    def _make_random() -> list[float]:
+        return neural_random_genome(rng) if config.neural else random_genome(rng)
+
+    def _load_weights(p: Path) -> list[float]:
+        return neural_load_genome(p) if config.neural else load_genome(p)
+
+    def _save_weights(genome: list[float], p: Path) -> None:
+        if config.neural:
+            neural_save_genome(genome, p)
+        else:
+            save_genome(genome, p)
+
     # Seed population with existing trained weights if available.
     population: list[Individual] = []
     prior_best: Individual | None = None
     if not config.from_scratch:
         try:
-            existing = load_genome(output_path)
+            existing = _load_weights(output_path)
             population.append(Individual(genome=existing))
             prior_best = Individual(genome=list(existing), fitness=0.0)
             print(f"Loaded existing weights from {output_path} — seeding population.")
-        except FileNotFoundError:
-            population.append(Individual(genome=default_genome()))
+        except (FileNotFoundError, ValueError):
+            population.append(Individual(genome=_make_default()))
     else:
         print("Starting from scratch — ignoring existing weights.")
-        population.append(Individual(genome=default_genome()))
+        population.append(Individual(genome=_make_default()))
 
     for _ in range(config.population_size - len(population)):
-        population.append(Individual(genome=random_genome(rng)))
+        population.append(Individual(genome=_make_random()))
 
     best_ever: Individual | None = None
     sigma = config.sigma_frac
@@ -213,6 +237,7 @@ def train(config: TrainingConfig) -> list[float]:
                         hall_of_fame,
                         config.self_play,
                         peers,
+                        config.neural,
                     )
                 )
 
@@ -240,7 +265,7 @@ def train(config: TrainingConfig) -> list[float]:
                     prior_best.fitness = population[0].fitness
                 # Only save if we actually beat whatever was on disk.
                 if prior_best is None or best_ever.fitness > prior_best.fitness:
-                    save_genome(best_ever.genome, output_path)
+                    _save_weights(best_ever.genome, output_path)
             else:
                 stagnation_count += 1
 
@@ -292,7 +317,7 @@ def train(config: TrainingConfig) -> list[float]:
     # Final save and summary.
     assert best_ever is not None
     if prior_best is None or best_ever.fitness > prior_best.fitness:
-        save_genome(best_ever.genome, output_path)
+        _save_weights(best_ever.genome, output_path)
         print("=" * 60)
         print(f"Training complete! Best fitness: {best_ever.fitness:.3f}")
         print(f"Weights saved to: {output_path}")
@@ -302,13 +327,16 @@ def train(config: TrainingConfig) -> list[float]:
             f"Training complete! Best fitness: {best_ever.fitness:.3f} "
             f"(did not beat prior best {prior_best.fitness:.3f} — keeping existing weights)"
         )
-    phases, transitions = genome_to_phase_dicts(best_ever.genome)
-    print("\nBest parameters:")
-    for i, phase_dict in enumerate(phases):
-        print(f"  [{PHASE_NAMES[i]}]")
-        for name, value in phase_dict.items():
-            print(f"    {name}: {value:.3f}")
-    for i, spec in enumerate(TRANSITION_SPECS):
-        print(f"  {spec.name}: {transitions[i]:.0f}")
+    if config.neural:
+        print(f"\nNeural genome: {len(best_ever.genome)} weights")
+    else:
+        phases, transitions = genome_to_phase_dicts(best_ever.genome)
+        print("\nBest parameters:")
+        for i, phase_dict in enumerate(phases):
+            print(f"  [{PHASE_NAMES[i]}]")
+            for name, value in phase_dict.items():
+                print(f"    {name}: {value:.3f}")
+        for i, spec in enumerate(TRANSITION_SPECS):
+            print(f"  {spec.name}: {transitions[i]:.0f}")
 
     return best_ever.genome

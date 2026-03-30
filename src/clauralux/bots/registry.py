@@ -13,6 +13,7 @@ from clauralux.bots.coordinator import CoordinatorBot
 from clauralux.bots.economic import EconomicBot
 from clauralux.bots.evolved import EvolvedBot
 from clauralux.bots.expander import ExpanderBot
+from clauralux.bots.neural import NeuralBot
 from clauralux.bots.opportunist import OpportunistBot
 from clauralux.bots.passive import PassiveBot
 from clauralux.bots.random_bot import RandomBot
@@ -38,6 +39,7 @@ BOT_REGISTRY: dict[str, type[Bot]] = {
     "economic": EconomicBot,
     "baiter": BaiterBot,
     "evolved": EvolvedBot,
+    "neural": NeuralBot,
 }
 
 BOT_DESCRIPTIONS: dict[str, str] = {
@@ -55,11 +57,12 @@ BOT_DESCRIPTIONS: dict[str, str] = {
     "economic": "Upgrades aggressively, then targets the opponent's highest-level suns.",
     "baiter": "Sends small bait attacks to draw defenders, then hits the weakened suns.",
     "evolved": "Evolved strategy — trained by playing thousands of games against all other bots.",
+    "neural": "Neural net bot — MLP reads game state and adapts strategy each tick.",
 }
 
 # Bots excluded from training: passive is useless as an opponent,
 # evolved is the thing being trained.
-_TRAINING_EXCLUDED: set[str] = {"passive", "evolved"}
+_TRAINING_EXCLUDED: set[str] = {"passive", "evolved", "neural"}
 
 
 def training_opponents() -> list[type[Bot]]:

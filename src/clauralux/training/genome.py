@@ -205,3 +205,66 @@ def load_genome(path: str | Path) -> list[float]:
         phase_values = [raw.get(spec.name, spec.default) for spec in PARAM_SPECS]
         transitions = [spec.default for spec in TRANSITION_SPECS]
         return phase_values * NUM_PHASES + transitions
+
+
+# ── Neural Network Genome ───────────────────────────────────────────────
+
+NEURAL_NUM_FEATURES: int = 12
+NEURAL_HIDDEN: int = 32
+NEURAL_NUM_OUTPUTS: int = NUM_PHASE_PARAMS + 4  # 25 params + 4 priority weights
+
+# Weight layout: W_ih + b_h + W_ho + b_o
+NEURAL_NUM_PARAMS: int = (
+    NEURAL_NUM_FEATURES * NEURAL_HIDDEN  # input→hidden weights
+    + NEURAL_HIDDEN  # hidden biases
+    + NEURAL_HIDDEN * NEURAL_NUM_OUTPUTS  # hidden→output weights
+    + NEURAL_NUM_OUTPUTS  # output biases
+)
+
+# Range for neural network weights (used for mutation).
+NEURAL_WEIGHT_RANGE = 3.0
+
+
+def neural_random_genome(rng: random.Random | None = None) -> list[float]:
+    """Xavier-initialized random genome for the neural network.
+
+    Uses Xavier/Glorot initialization: weights ~ Uniform(-limit, limit)
+    where limit = sqrt(6 / (fan_in + fan_out)).
+    """
+    import math
+
+    r = rng or random.Random()
+    genome: list[float] = []
+
+    # Input→Hidden weights: Xavier with fan_in=12, fan_out=32.
+    limit_ih = math.sqrt(6.0 / (NEURAL_NUM_FEATURES + NEURAL_HIDDEN))
+    for _ in range(NEURAL_NUM_FEATURES * NEURAL_HIDDEN):
+        genome.append(r.uniform(-limit_ih, limit_ih))
+
+    # Hidden biases: zero-initialized.
+    genome.extend([0.0] * NEURAL_HIDDEN)
+
+    # Hidden→Output weights: Xavier with fan_in=32, fan_out=29.
+    limit_ho = math.sqrt(6.0 / (NEURAL_HIDDEN + NEURAL_NUM_OUTPUTS))
+    for _ in range(NEURAL_HIDDEN * NEURAL_NUM_OUTPUTS):
+        genome.append(r.uniform(-limit_ho, limit_ho))
+
+    # Output biases: zero-initialized.
+    genome.extend([0.0] * NEURAL_NUM_OUTPUTS)
+
+    return genome
+
+
+def neural_save_genome(genome: list[float], path: str | Path) -> None:
+    """Save a neural genome to a JSON file."""
+    data = {"type": "neural", "weights": genome}
+    Path(path).write_text(json.dumps(data, indent=2) + "\n")
+
+
+def neural_load_genome(path: str | Path) -> list[float]:
+    """Load a neural genome from a JSON file."""
+    raw = json.loads(Path(path).read_text())
+    if raw.get("type") == "neural":
+        return raw["weights"]  # type: ignore[no-any-return]
+    msg = f"Not a neural genome file: {path}"
+    raise ValueError(msg)

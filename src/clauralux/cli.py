@@ -184,6 +184,7 @@ def campaign(
 @click.option("--output", default="data/evolved_weights.json", help="Output path for weights.")
 @click.option("--from-scratch", is_flag=True, help="Ignore existing weights.")
 @click.option("--self-play", is_flag=True, help="Train only against other evolved bots.")
+@click.option("--neural", is_flag=True, help="Train a neural net bot instead of phase-based.")
 @click.option("--benchmark-games", type=int, default=50, help="Games per opponent for benchmark.")
 def train(
     population: int,
@@ -193,9 +194,12 @@ def train(
     output: str,
     from_scratch: bool,
     self_play: bool,
+    neural: bool,
     benchmark_games: int,
 ) -> None:
     """Train the evolved bot using evolutionary optimisation."""
+    if neural and output == "data/evolved_weights.json":
+        output = "data/neural_weights.json"
     _run_train(
         population=population,
         generations=generations,
@@ -204,6 +208,7 @@ def train(
         output=output,
         from_scratch=from_scratch,
         self_play=self_play,
+        neural=neural,
         benchmark_games=benchmark_games,
     )
 
@@ -212,17 +217,23 @@ def train(
 @click.option("--workers", type=int, default=0, help="Parallel workers (0 = all CPUs).")
 @click.option("--output", default="data/evolved_weights.json", help="Output path for weights.")
 @click.option("--from-scratch", is_flag=True, help="Ignore existing weights.")
-def megatrain(workers: int, output: str, from_scratch: bool) -> None:
+@click.option("--neural", is_flag=True, help="Train a neural net bot instead of phase-based.")
+def megatrain(workers: int, output: str, from_scratch: bool, neural: bool) -> None:
     """Intensive 3-phase training with automatic benchmarking."""
-    _run_megatrain(workers=workers, output=output, from_scratch=from_scratch)
+    if neural and output == "data/evolved_weights.json":
+        output = "data/neural_weights.json"
+    _run_megatrain(workers=workers, output=output, from_scratch=from_scratch, neural=neural)
 
 
 @main.command()
 @click.option("--benchmark-games", type=int, default=50, help="Games per opponent per map.")
-def benchmark(benchmark_games: int) -> None:
+@click.option("--neural", is_flag=True, help="Benchmark the neural bot instead of evolved.")
+def benchmark(benchmark_games: int, neural: bool) -> None:
     """Benchmark the evolved bot against all opponents."""
-    result = _run_benchmark_core(benchmark_games)
-    _print_benchmark("Evolved Bot Benchmark", result)
+    bot_name = "neural" if neural else "evolved"
+    result = _run_benchmark_core(benchmark_games, bot_name=bot_name)
+    label = "Neural Bot Benchmark" if neural else "Evolved Bot Benchmark"
+    _print_benchmark(label, result)
 
 
 @main.command()
@@ -752,13 +763,15 @@ def _run_train(
     output: str,
     from_scratch: bool,
     self_play: bool,
+    neural: bool,
     benchmark_games: int,
 ) -> None:
     from clauralux.training.trainer import TrainingConfig
     from clauralux.training.trainer import train as run_training
 
+    bot_name = "neural" if neural else "evolved"
     click.echo("Running pre-training benchmark...")
-    before = _run_benchmark_core(benchmark_games)
+    before = _run_benchmark_core(benchmark_games, bot_name=bot_name)
     _print_benchmark("Pre-training benchmark", before)
     click.echo()
 
@@ -770,15 +783,16 @@ def _run_train(
         output_path=output,
         from_scratch=from_scratch,
         self_play=self_play,
+        neural=neural,
     )
     run_training(config)
 
     click.echo("\nRunning post-training benchmark...")
-    after = _run_benchmark_core(benchmark_games)
+    after = _run_benchmark_core(benchmark_games, bot_name=bot_name)
     _print_benchmark_comparison(before, after)
 
 
-def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
+def _run_megatrain(workers: int, output: str, from_scratch: bool, neural: bool = False) -> None:
     from clauralux.training.trainer import TrainingConfig
     from clauralux.training.trainer import train as run_training
 
@@ -792,6 +806,7 @@ def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
                 workers=workers,
                 output_path=output,
                 from_scratch=from_scratch,
+                neural=neural,
                 elite_count=10,
                 hall_of_fame_interval=3,
                 stagnation_limit=10,
@@ -807,6 +822,7 @@ def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
                 workers=workers,
                 output_path=output,
                 self_play=True,
+                neural=neural,
                 elite_count=10,
                 hall_of_fame_interval=3,
                 stagnation_limit=10,
@@ -821,6 +837,7 @@ def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
                 games_per_eval=80,
                 workers=workers,
                 output_path=output,
+                neural=neural,
                 elite_count=10,
                 hall_of_fame_interval=3,
                 stagnation_limit=10,
@@ -829,14 +846,16 @@ def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
         ),
     ]
 
+    bot_type = "neural" if neural else "evolved"
     click.echo("=" * 60)
-    click.echo("MEGATRAIN — no-holds-barred evolved bot training")
+    click.echo(f"MEGATRAIN ({bot_type}) — no-holds-barred training")
     click.echo("  3 phases, 1000 total generations, pop=150, games/eval=80")
     click.echo(f"  Output: {output}")
     click.echo("=" * 60)
 
+    bot_name = "neural" if neural else "evolved"
     click.echo("\nRunning pre-training benchmark...")
-    before = _run_benchmark_core(50)
+    before = _run_benchmark_core(50, bot_name=bot_name)
     _print_benchmark("Pre-training benchmark", before)
 
     for label, config in phases:
@@ -846,7 +865,7 @@ def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
         run_training(config)
 
     click.echo("\nRunning post-training benchmark...")
-    after = _run_benchmark_core(50)
+    after = _run_benchmark_core(50, bot_name=bot_name)
     _print_benchmark_comparison(before, after)
 
 
@@ -887,14 +906,15 @@ class BenchmarkResult:
         return w / max(total, 1) * 100
 
 
-def _run_benchmark_core(games_per_opponent: int) -> BenchmarkResult:
-    """Run the evolved bot against all opponents, return structured results."""
+def _run_benchmark_core(games_per_opponent: int, bot_name: str = "evolved") -> BenchmarkResult:
+    """Run a bot against all opponents, return structured results."""
     from clauralux.bots.registry import BOT_REGISTRY
     from clauralux.engine.mapgen import generate_map
     from clauralux.runner.tournament import run_tournament
 
     config = GameConfig(max_ticks=10_000)
-    opponents = [name for name in BOT_REGISTRY if name not in ("passive", "evolved")]
+    excluded = {"passive", "evolved", "neural"}
+    opponents = [name for name in BOT_REGISTRY if name not in excluded]
 
     map_factories: list[MapFactory] = [two_player_simple]
     for flavour in FLAVOUR_NAMES:
@@ -925,7 +945,7 @@ def _run_benchmark_core(games_per_opponent: int) -> BenchmarkResult:
                 config=config,
                 map_factory=map_factory,
                 bot_factories={
-                    PlayerId(1): _make_bot_factory("evolved"),
+                    PlayerId(1): _make_bot_factory(bot_name),
                     PlayerId(2): _make_bot_factory(opp_name),
                 },
                 num_games=games_per_opponent,

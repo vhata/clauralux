@@ -17,7 +17,7 @@ from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
 from clauralux.runner.headless import GameResult, HeadlessRunner
 
-from .genome import ALL_SPECS, clamp_genome
+from .genome import ALL_SPECS, NEURAL_WEIGHT_RANGE, clamp_genome
 
 # Type alias: creates a Bot for a given player ID.
 BotFactory = Callable[[PlayerId], Bot]
@@ -135,14 +135,25 @@ def gaussian_mutate(
 ) -> list[float]:
     """Apply Gaussian noise to each gene with per-gene probability.
 
-    sigma_frac is the fraction of each parameter's range used as sigma.
+    For heuristic genomes (phase-based), sigma_frac is the fraction of each
+    parameter's range. For neural genomes (longer than ALL_SPECS), uses a
+    fixed weight range.
     """
     result = list(genome)
-    for i, spec in enumerate(ALL_SPECS):
-        if rng.random() < mutation_prob:
-            sigma = (spec.hi - spec.lo) * sigma_frac
-            result[i] += rng.gauss(0.0, sigma)
-    return clamp_genome(result)
+    if len(genome) <= len(ALL_SPECS):
+        # Phase-based genome: per-parameter ranges.
+        for i, spec in enumerate(ALL_SPECS):
+            if rng.random() < mutation_prob:
+                sigma = (spec.hi - spec.lo) * sigma_frac
+                result[i] += rng.gauss(0.0, sigma)
+        return clamp_genome(result)
+    else:
+        # Neural genome: uniform sigma across all weights.
+        sigma = NEURAL_WEIGHT_RANGE * 2 * sigma_frac
+        for i in range(len(genome)):
+            if rng.random() < mutation_prob:
+                result[i] += rng.gauss(0.0, sigma)
+        return result
 
 
 def create_next_generation(
