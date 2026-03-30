@@ -51,10 +51,10 @@ class CoordinatorBot(Bot):
                 key=lambda s: s.position.distance_to(target.position),
             )
             available = nearest_sun.garrison - self._reserve
+            remaining_suns.remove(nearest_sun)
             if available > 0:
                 actions.append(SendUnits(nearest_sun.id, target.id, available))
                 assigned_targets.append(target)
-                remaining_suns.remove(nearest_sun)
 
         if assigned_targets:
             target_ids = ", ".join(str(t.id) for t in assigned_targets)
