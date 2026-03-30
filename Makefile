@@ -1,7 +1,8 @@
-.PHONY: help sync format lint type test check precommit build-rust
+.PHONY: help run sync format lint type test check precommit build-rust
 
 help:
 	@echo "Available targets:"
+	@echo "  run        - Launch Clauralux (pass ARGS for subcommands)"
 	@echo "  sync       - Install/update dependencies"
 	@echo "  build-rust - Build Rust engine extension"
 	@echo "  precommit  - Install pre-commit hooks"
@@ -10,6 +11,10 @@ help:
 	@echo "  type       - Type check with mypy"
 	@echo "  test       - Run test suite"
 	@echo "  check      - Run all checks (format, lint, type, test)"
+
+# Usage: make run  OR  make run ARGS="train --neural --from-scratch"
+run:
+	uv run clauralux $(ARGS)
 
 sync:
 	uv sync --group dev
