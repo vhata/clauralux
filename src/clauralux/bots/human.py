@@ -35,7 +35,8 @@ class HumanBot(Bot):
         if self.selected_sun is not None:
             sun = view.sun_by_id(self.selected_sun)
             if sun is not None:
-                self._intent = f"Selected Sun {self.selected_sun} ({sun.garrison} units)"
+                available = max(0, int(sun.garrison) - 3)
+                self._intent = f"Sun {self.selected_sun} selected — {available} units ready"
             else:
                 self._intent = "Waiting for orders."
         else:
