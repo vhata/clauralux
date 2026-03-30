@@ -18,10 +18,11 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
-- **14 built-in bots** (each with strategic intent narration)
-- **Evolutionary training** — train an evolved bot by running `clauralux train` to optimise 25 parameters against all other bots, with difficulty-weighted opponents and stagnation resets
+- **15 built-in bots** (each with strategic intent narration)
+- **Evolutionary training** — train evolved or neural bots against all other bots, with difficulty-weighted opponents and stagnation resets
+- **Neural net bot** — MLP reads 12 game-state features and outputs 29 decision parameters + action priorities each tick, adapting strategy to the board state in real time
 - **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
-- **Benchmark** — scorecard showing evolved bot's win rate against every opponent across all maps
+- **Benchmark** — scorecard showing evolved or neural bot's win rate against every opponent across all maps
 - **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
 - **Replay system** — record, save, load, and play back games
 - **Themed random maps** — strategic, rush, chokepoint, swarm
@@ -47,7 +48,8 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 | **reactive** | Defensive — reinforces threatened suns, only attacks with overwhelming force. |
 | **economic** | Upgrades aggressively, then targets the opponent's highest-level suns. |
 | **baiter** | Sends small bait attacks to draw defenders, then hits the weakened suns. |
-| **evolved** | Trained by playing thousands of games against all other bots. 25 evolvable parameters covering target selection, force commitment, economy, timing, and threat response. |
+| **evolved** | Phase-based strategy with 3 game phases (early/mid/late), each with 25 evolvable parameters. Trained by playing thousands of games against all other bots. |
+| **neural** | MLP neural network (12 inputs, 32 hidden, 29 outputs) that reads game state and adapts strategy each tick. 1373 evolvable weights. Controls action priority ordering as well as all decision parameters. |
 
 ## Prerequisites
 
@@ -122,6 +124,13 @@ clauralux megatrain --from-scratch
 # Benchmark the evolved bot against all opponents
 clauralux benchmark
 clauralux benchmark --benchmark-games 100
+
+# Train the neural net bot (needs bigger population for 1373 weights)
+clauralux train --neural --from-scratch
+clauralux megatrain --neural --from-scratch
+
+# Benchmark the neural bot
+clauralux benchmark --neural
 ```
 
 Training automatically runs a before/after benchmark and shows a comparison table.
@@ -165,10 +174,11 @@ src/clauralux/
         config.py       # All tunable parameters
         mapgen.py       # Themed random map generation
         campaign.py     # 18-level campaign definitions
-    bots/               # Bot framework + 14 strategies
+    bots/               # Bot framework + 15 strategies
         base.py         # Abstract Bot class with intent narration
         registry.py     # Central bot registry
-        evolved.py      # Parameterized bot with 25 evolvable weights
+        evolved.py      # Phase-based bot with 3x25 evolvable weights
+        neural.py       # MLP neural net bot (1373 weights)
     training/           # Evolutionary training system
         genome.py       # Parameter definitions and serialization
         evolution.py    # Selection, crossover, mutation, weighted fitness
