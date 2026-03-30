@@ -3,6 +3,9 @@
 When instantiated without arguments, loads pre-trained weights from disk
 (falling back to sensible defaults). During training, pass an explicit
 genome list to evaluate a candidate parameter vector.
+
+The genome encodes 3 phases (early/mid/late) of 25 parameters each, plus
+2 transition thresholds. The bot switches between phases based on tick count.
 """
 
 from __future__ import annotations
@@ -13,8 +16,9 @@ from clauralux.engine.actions import Action, SendUnits, UpgradeSun
 from clauralux.engine.types import NEUTRAL, SunId
 from clauralux.engine.view import GameView, SunView
 from clauralux.training.genome import (
+    PHASE_NAMES,
     default_genome,
-    genome_to_dict,
+    genome_to_phase_dicts,
     load_genome,
 )
 
@@ -24,7 +28,7 @@ DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parents[3] / "data" / "evolved_w
 
 
 class EvolvedBot(Bot):
-    """Parameterized heuristic bot — every threshold and weight is evolvable."""
+    """Parameterized heuristic bot with 3 game phases (early/mid/late)."""
 
     def __init__(
         self,
@@ -41,7 +45,20 @@ class EvolvedBot(Bot):
                 raw = load_genome(DEFAULT_WEIGHTS_PATH)
             except FileNotFoundError:
                 raw = default_genome()
-        self._p = genome_to_dict(raw)
+        self._phases, self._transitions = genome_to_phase_dicts(raw)
+        # Active phase dict — set each tick in decide().
+        self._p: dict[str, float] = self._phases[0]
+
+    def _current_phase(self, tick: int) -> int:
+        """Determine game phase (0=early, 1=mid, 2=late) from tick count."""
+        t1 = self._transitions[0]
+        t2 = self._transitions[1]
+        if tick < t1:
+            return 0
+        elif tick < t2:
+            return 1
+        else:
+            return 2
 
     # ── helpers ────────────────────────────────────────────────────────────
 
@@ -54,13 +71,18 @@ class EvolvedBot(Bot):
     # ── main entry point ──────────────────────────────────────────────────
 
     def decide(self, view: GameView) -> list[Action]:
+        # Select active phase based on tick.
+        phase_idx = self._current_phase(view.tick)
+        self._p = self._phases[phase_idx]
+        phase_label = PHASE_NAMES[phase_idx]
+
         act_interval = self._gi("act_interval")
         if view.tick % act_interval != 0:
             return []
 
         my_suns = view.my_suns()
         if not my_suns:
-            self._intent = "No suns. Waiting for the end."
+            self._intent = f"[{phase_label}] No suns. Waiting for the end."
             return []
 
         reserve = self._g("reserve_per_sun")

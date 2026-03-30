@@ -33,8 +33,10 @@ from .evolution import (
     evaluate_fitness,
 )
 from .genome import (
+    PHASE_NAMES,
+    TRANSITION_SPECS,
     default_genome,
-    genome_to_dict,
+    genome_to_phase_dicts,
     load_genome,
     random_genome,
     save_genome,
@@ -300,8 +302,13 @@ def train(config: TrainingConfig) -> list[float]:
             f"Training complete! Best fitness: {best_ever.fitness:.3f} "
             f"(did not beat prior best {prior_best.fitness:.3f} — keeping existing weights)"
         )
+    phases, transitions = genome_to_phase_dicts(best_ever.genome)
     print("\nBest parameters:")
-    for name, value in genome_to_dict(best_ever.genome).items():
-        print(f"  {name}: {value:.3f}")
+    for i, phase_dict in enumerate(phases):
+        print(f"  [{PHASE_NAMES[i]}]")
+        for name, value in phase_dict.items():
+            print(f"    {name}: {value:.3f}")
+    for i, spec in enumerate(TRANSITION_SPECS):
+        print(f"  {spec.name}: {transitions[i]:.0f}")
 
     return best_ever.genome

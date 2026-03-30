@@ -8,8 +8,8 @@ from clauralux.training.evolution import (
     uniform_crossover,
 )
 from clauralux.training.genome import (
+    ALL_SPECS,
     NUM_PARAMS,
-    PARAM_SPECS,
     default_genome,
     random_genome,
 )
@@ -44,7 +44,7 @@ class TestMutation:
         g = default_genome()
         # High mutation to stress test clamping.
         mutated = gaussian_mutate(g, sigma_frac=1.0, mutation_prob=1.0, rng=rng)
-        for p, v in zip(PARAM_SPECS, mutated, strict=True):
+        for p, v in zip(ALL_SPECS, mutated, strict=True):
             assert p.lo <= v <= p.hi, f"{p.name}: {v} not in [{p.lo}, {p.hi}]"
 
     def test_zero_mutation_prob_no_change(self) -> None:

@@ -17,7 +17,7 @@ from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
 from clauralux.runner.headless import GameResult, HeadlessRunner
 
-from .genome import PARAM_SPECS, clamp_genome
+from .genome import ALL_SPECS, clamp_genome
 
 # Type alias: creates a Bot for a given player ID.
 BotFactory = Callable[[PlayerId], Bot]
@@ -138,7 +138,7 @@ def gaussian_mutate(
     sigma_frac is the fraction of each parameter's range used as sigma.
     """
     result = list(genome)
-    for i, spec in enumerate(PARAM_SPECS):
+    for i, spec in enumerate(ALL_SPECS):
         if rng.random() < mutation_prob:
             sigma = (spec.hi - spec.lo) * sigma_frac
             result[i] += rng.gauss(0.0, sigma)
