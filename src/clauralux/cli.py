@@ -90,6 +90,8 @@ def _game_options(f: Callable[..., None]) -> Callable[..., None]:
 @main.command()
 @_game_options
 @click.option("--record", default=None, metavar="FILE", help="Record game to replay JSON file.")
+@click.option("--no-commentary", is_flag=True, help="Disable commentary overlay.")
+@click.option("--pause-on-events", is_flag=True, help="Pause on big moments with commentary.")
 def watch(
     bot: tuple[str, ...],
     map_name: str,
@@ -98,13 +100,23 @@ def watch(
     max_ticks: int,
     speed: float,
     record: str | None,
+    no_commentary: bool,
+    pause_on_events: bool,
 ) -> None:
     """Watch a game with visual rendering and commentary."""
     config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
     bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
     if map_name.startswith("random:"):
         config = flavour_config(config, map_name.split(":", 1)[1])
-    _run_visual(config, map_name, bot_names, seed, record_path=record)
+    _run_visual(
+        config,
+        map_name,
+        bot_names,
+        seed,
+        record_path=record,
+        commentary_enabled=not no_commentary,
+        pause_on_events=pause_on_events,
+    )
 
 
 @main.command()
