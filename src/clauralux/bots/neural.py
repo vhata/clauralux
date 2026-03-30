@@ -13,6 +13,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
+
 from clauralux.engine.actions import Action
 from clauralux.engine.view import GameView
 from clauralux.training.genome import (
@@ -111,43 +113,37 @@ def mlp_forward(
     num_hidden: int = NEURAL_HIDDEN,
     num_outputs: int = NEURAL_NUM_OUTPUTS,
 ) -> list[float]:
-    """Pure-Python MLP forward pass: input → hidden (tanh) → output (sigmoid).
+    """NumPy-accelerated MLP forward pass: input → hidden (tanh) → output (sigmoid).
 
     Weight layout in the flat list:
       [W_ih (features*hidden), b_h (hidden), W_ho (hidden*outputs), b_o (outputs)]
     """
+    w = np.array(weights)
+    x = np.array(features)
     idx = 0
 
-    # Input → Hidden.
-    w_ih_size = num_features * num_hidden
-    hidden = [0.0] * num_hidden
-    for h in range(num_hidden):
-        total = 0.0
-        for f in range(num_features):
-            total += features[f] * weights[idx + h * num_features + f]
-        hidden[h] = total
-    idx += w_ih_size
+    # Input → Hidden: W_ih is (num_hidden, num_features), stored row-major.
+    w_ih = w[idx : idx + num_features * num_hidden].reshape(num_hidden, num_features)
+    idx += num_features * num_hidden
 
-    # Hidden bias.
-    for h in range(num_hidden):
-        hidden[h] = _tanh(hidden[h] + weights[idx + h])
+    b_h = w[idx : idx + num_hidden]
     idx += num_hidden
 
-    # Hidden → Output.
-    w_ho_size = num_hidden * num_outputs
-    output = [0.0] * num_outputs
-    for o in range(num_outputs):
-        total = 0.0
-        for h in range(num_hidden):
-            total += hidden[h] * weights[idx + o * num_hidden + h]
-        output[o] = total
-    idx += w_ho_size
+    hidden = np.tanh(w_ih @ x + b_h)
 
-    # Output bias + sigmoid activation.
-    for o in range(num_outputs):
-        output[o] = _sigmoid(output[o] + weights[idx + o])
+    # Hidden → Output: W_ho is (num_outputs, num_hidden), stored row-major.
+    w_ho = w[idx : idx + num_hidden * num_outputs].reshape(num_outputs, num_hidden)
+    idx += num_hidden * num_outputs
 
-    return output
+    b_o = w[idx : idx + num_outputs]
+
+    # Sigmoid activation with clipping for numerical stability.
+    z = w_ho @ hidden + b_o
+    z = np.clip(z, -500.0, 500.0)
+    output = 1.0 / (1.0 + np.exp(-z))
+
+    result: list[float] = output.tolist()
+    return result
 
 
 def decode_outputs(
