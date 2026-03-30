@@ -272,6 +272,10 @@ def train(config: TrainingConfig) -> list[float]:
             # Add to hall of fame at regular intervals.
             if (gen + 1) % config.hall_of_fame_interval == 0:
                 hall_of_fame.append(list(gen_best.genome))
+                # Cap HOF size to avoid quadratic training cost.
+                max_hof = 15
+                if len(hall_of_fame) > max_hof:
+                    hall_of_fame.pop(0)
 
             elapsed = time.monotonic() - gen_start
 
