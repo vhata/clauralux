@@ -16,53 +16,39 @@ PADDING = 40
 HUD_HEIGHT = 100
 
 
-def _set_window_icon() -> None:
-    """Set a custom sun icon for the window/taskbar."""
+def _create_icon() -> pygame.Surface:
+    """Create a sun icon surface for the window/taskbar."""
     size = 32
     surface = pygame.Surface((size, size), pygame.SRCALPHA)
     cx, cy = size // 2, size // 2
 
-    # Outer glow.
-    glow = pygame.Surface((size, size), pygame.SRCALPHA)
-    pygame.draw.circle(glow, (255, 200, 50, 80), (cx, cy), 15)
-    surface.blit(glow, (0, 0))
-
     # Rays.
-    import math as _math
-
     for i in range(8):
-        angle = _math.pi * 2 * i / 8
-        x1 = cx + int(10 * _math.cos(angle))
-        y1 = cy + int(10 * _math.sin(angle))
-        x2 = cx + int(15 * _math.cos(angle))
-        y2 = cy + int(15 * _math.sin(angle))
+        angle = math.pi * 2 * i / 8
+        x1 = cx + int(10 * math.cos(angle))
+        y1 = cy + int(10 * math.sin(angle))
+        x2 = cx + int(15 * math.cos(angle))
+        y2 = cy + int(15 * math.sin(angle))
         pygame.draw.line(surface, (255, 220, 80), (x1, y1), (x2, y2), 2)
 
     # Core sun.
     pygame.draw.circle(surface, (255, 180, 30), (cx, cy), 9)
     pygame.draw.circle(surface, (255, 220, 80), (cx, cy), 6)
 
-    pygame.display.set_icon(surface)
+    return surface
 
 
-def _set_process_name() -> None:
-    """Set macOS process name so the dock shows 'Clauralux' not 'Python'."""
+def _set_macos_dock_name() -> None:
+    """Set macOS dock name to 'Clauralux' instead of 'Python'."""
     try:
-        import ctypes
-        import ctypes.util
+        from Foundation import NSBundle
 
-        lib = ctypes.util.find_library("c")
-        if lib:
-            libc = ctypes.CDLL(lib)
-            # setproctitle on macOS — changes argv[0].
-            # This is best-effort; fails silently on non-macOS.
-            libc.setprogname(b"Clauralux")
+        bundle = NSBundle.mainBundle()
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info is not None:
+            info["CFBundleName"] = "Clauralux"
     except Exception:
         pass
-
-
-# Set process name at import time (before pygame.init).
-_set_process_name()
 
 
 class PygameRenderer:
@@ -75,10 +61,11 @@ class PygameRenderer:
         self._offset_x = PADDING
         self._offset_y = PADDING
 
+        _set_macos_dock_name()
         pygame.init()
+        pygame.display.set_icon(_create_icon())
         self._screen = pygame.display.set_mode((self._window_width, self._window_height))
         pygame.display.set_caption(title)
-        _set_window_icon()
         self._font = pygame.font.SysFont("monospace", 14)
         self._font_large = pygame.font.SysFont("monospace", 18, bold=True)
         self._clock = pygame.time.Clock()
