@@ -18,7 +18,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
-- **14 built-in bots** — passive, random, aggressive, expander, turtle, rush, sniper, opportunist, swarm, coordinator, reactive, economic, baiter, evolved (each with strategic intent narration)
+- **14 built-in bots** (each with strategic intent narration)
 - **Evolutionary training** — train an evolved bot by running `clauralux train` to optimise 25 parameters against all other bots, with difficulty-weighted opponents and stagnation resets
 - **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
 - **Benchmark** — scorecard showing evolved bot's win rate against every opponent across all maps
@@ -29,6 +29,25 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Tournament system** — run N games and compare bot win rates
 - **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions and settings persistence
 - **Visual renderer** — pygame-ce with pulsing suns, unit swarms, trajectory lines, capture flashes, and detailed pause overlay
+
+## Bots
+
+| Bot | Strategy |
+|-----|----------|
+| **passive** | Does nothing. Just sits there. |
+| **random** | Picks actions by dice roll. Chaotic and bad. |
+| **aggressive** | Waits until it can overwhelm the weakest target, then sends everything. |
+| **expander** | Grabs neutrals first, upgrades economy, attacks enemies last. |
+| **turtle** | Upgrades all suns to max, builds huge garrisons, then crushes. |
+| **rush** | Constant early pressure — sends units every 20 ticks at the nearest target. |
+| **sniper** | Ignores neutrals. Targets the weakest player's weakest sun to eliminate them. |
+| **opportunist** | Watches for low garrisons and pounces. Upgrades when nothing's weak enough. |
+| **swarm** | Many small attacks from every sun. Death by a thousand cuts. |
+| **coordinator** | Accumulates, then strikes multiple targets simultaneously. |
+| **reactive** | Defensive — reinforces threatened suns, only attacks with overwhelming force. |
+| **economic** | Upgrades aggressively, then targets the opponent's highest-level suns. |
+| **baiter** | Sends small bait attacks to draw defenders, then hits the weakened suns. |
+| **evolved** | Trained by playing thousands of games against all other bots. 25 evolvable parameters covering target selection, force commitment, economy, timing, and threat response. |
 
 ## Prerequisites
 
