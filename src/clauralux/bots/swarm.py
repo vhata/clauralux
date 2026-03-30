@@ -28,7 +28,30 @@ class SwarmBot(Bot):
             self._intent = "Everything is mine. The swarm has consumed all."
             return []
 
-        actions: list[Action] = []
+        # Check if we can concentrate fire on a high-priority target.
+        available_suns = [s for s in my_suns if s.garrison >= self._send_size + 1]
+        total_available = len(available_suns) * self._send_size
+
+        if total_available > 0:
+            # Find the weakest target overall.
+            weakest = min(targets, key=lambda t: t.garrison)
+            if weakest.garrison <= total_available // 2 and len(available_suns) >= 2:
+                # Concentrate fire: send from the 2 nearest suns to this one target.
+                nearest_suns = sorted(
+                    available_suns,
+                    key=lambda s: s.position.distance_to(weakest.position),
+                )[:2]
+                actions: list[Action] = [
+                    SendUnits(s.id, weakest.id, self._send_size) for s in nearest_suns
+                ]
+                self._intent = (
+                    f"Concentrating fire — {len(actions)} groups targeting"
+                    f" Sun {weakest.id} (garrison {weakest.garrison})."
+                )
+                return actions
+
+        # Fallback: spread attacks from every sun to its nearest target.
+        actions = []
         groups_launched = 0
 
         for sun in my_suns:
