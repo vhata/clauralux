@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+import click
 
 from clauralux.bots.base import Bot
 from clauralux.bots.registry import BOT_DESCRIPTIONS, BOT_REGISTRY
@@ -48,6 +49,235 @@ FLAVOUR_NAMES = list(FLAVOURS.keys())
 _CONFIG_DIR = Path.home() / ".config" / "clauralux"
 _SETTINGS_PATH = _CONFIG_DIR / "settings.json"
 
+_BOT_NAMES_STR = ", ".join(BOT_REGISTRY)
+_MAP_NAMES_STR = ", ".join(MAP_REGISTRY)
+
+
+# ── Click CLI ───────────────────────────────────────────────────────────
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def main(ctx: click.Context) -> None:
+    """Clauralux — an Auralux clone for bot strategy development."""
+    if ctx.invoked_subcommand is None:
+        _run_gui_menu()
+
+
+def _game_options(f: Callable[..., None]) -> Callable[..., None]:
+    """Shared options for watch/headless/tournament commands."""
+    f = click.option(
+        "--bot",
+        "-b",
+        "bot",
+        multiple=True,
+        help=f"Bot type (repeat for each player). Available: {_BOT_NAMES_STR}",
+    )(f)
+    f = click.option(
+        "--map",
+        "-m",
+        "map_name",
+        default="2p",
+        help=f"Map: {_MAP_NAMES_STR} or random:FLAVOUR ({', '.join(FLAVOUR_NAMES)})",
+    )(f)
+    f = click.option("--players", type=int, default=None, help="Players for random maps.")(f)
+    f = click.option("--seed", type=int, default=None, help="Random seed for map generation.")(f)
+    f = click.option("--max-ticks", type=int, default=30000, help="Max ticks before draw.")(f)
+    f = click.option("--speed", type=float, default=2.0, help="Unit speed.")(f)
+    return f
+
+
+@main.command()
+@_game_options
+@click.option("--record", default=None, metavar="FILE", help="Record game to replay JSON file.")
+def watch(
+    bot: tuple[str, ...],
+    map_name: str,
+    players: int | None,
+    seed: int | None,
+    max_ticks: int,
+    speed: float,
+    record: str | None,
+) -> None:
+    """Watch a game with visual rendering and commentary."""
+    config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
+    bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
+    if map_name.startswith("random:"):
+        config = flavour_config(config, map_name.split(":", 1)[1])
+    _run_visual(config, map_name, bot_names, seed, record_path=record)
+
+
+@main.command()
+@_game_options
+@click.option("--record", default=None, metavar="FILE", help="Record game to replay JSON file.")
+def headless(
+    bot: tuple[str, ...],
+    map_name: str,
+    players: int | None,
+    seed: int | None,
+    max_ticks: int,
+    speed: float,
+    record: str | None,
+) -> None:
+    """Run a game headlessly (fast, no display)."""
+    config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
+    bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
+    if map_name.startswith("random:"):
+        config = flavour_config(config, map_name.split(":", 1)[1])
+    _run_headless(config, map_name, bot_names, seed, record_path=record)
+
+
+@main.command()
+@_game_options
+@click.option("--games", type=int, default=100, help="Number of games.")
+def tournament(
+    bot: tuple[str, ...],
+    map_name: str,
+    players: int | None,
+    seed: int | None,
+    max_ticks: int,
+    speed: float,
+    games: int,
+) -> None:
+    """Run a tournament of multiple games and compare win rates."""
+    config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
+    bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
+    if map_name.startswith("random:"):
+        config = flavour_config(config, map_name.split(":", 1)[1])
+    _run_tournament(config, map_name, bot_names, games, seed)
+
+
+@main.command()
+@click.option(
+    "--bot",
+    "-b",
+    "bot_name",
+    default="expander",
+    help=f"Bot for player 1. Available: {_BOT_NAMES_STR}",
+)
+@click.option("--level", type=int, default=1, help="Campaign starting level.")
+@click.option("--max-ticks", type=int, default=30000, help="Max ticks before draw.")
+@click.option("--speed", type=float, default=2.0, help="Unit speed.")
+@click.option("--headless", "run_headless", is_flag=True, help="Run campaign without display.")
+def campaign(
+    bot_name: str,
+    level: int,
+    max_ticks: int,
+    speed: float,
+    run_headless: bool,
+) -> None:
+    """Play through the 18-level campaign."""
+    _run_campaign(
+        bot_name=bot_name,
+        start_level=level,
+        max_ticks=max_ticks,
+        speed=speed,
+        headless=run_headless,
+    )
+
+
+@main.command()
+@click.option("--population", type=int, default=80, help="Population size.")
+@click.option("--generations", type=int, default=200, help="Number of generations.")
+@click.option("--games-per-eval", type=int, default=40, help="Games per fitness evaluation.")
+@click.option("--workers", type=int, default=0, help="Parallel workers (0 = all CPUs).")
+@click.option("--output", default="data/evolved_weights.json", help="Output path for weights.")
+@click.option("--from-scratch", is_flag=True, help="Ignore existing weights.")
+@click.option("--self-play", is_flag=True, help="Train only against other evolved bots.")
+@click.option("--benchmark-games", type=int, default=50, help="Games per opponent for benchmark.")
+def train(
+    population: int,
+    generations: int,
+    games_per_eval: int,
+    workers: int,
+    output: str,
+    from_scratch: bool,
+    self_play: bool,
+    benchmark_games: int,
+) -> None:
+    """Train the evolved bot using evolutionary optimisation."""
+    _run_train(
+        population=population,
+        generations=generations,
+        games_per_eval=games_per_eval,
+        workers=workers,
+        output=output,
+        from_scratch=from_scratch,
+        self_play=self_play,
+        benchmark_games=benchmark_games,
+    )
+
+
+@main.command()
+@click.option("--workers", type=int, default=0, help="Parallel workers (0 = all CPUs).")
+@click.option("--output", default="data/evolved_weights.json", help="Output path for weights.")
+@click.option("--from-scratch", is_flag=True, help="Ignore existing weights.")
+def megatrain(workers: int, output: str, from_scratch: bool) -> None:
+    """Intensive 3-phase training with automatic benchmarking."""
+    _run_megatrain(workers=workers, output=output, from_scratch=from_scratch)
+
+
+@main.command()
+@click.option("--benchmark-games", type=int, default=50, help="Games per opponent per map.")
+def benchmark(benchmark_games: int) -> None:
+    """Benchmark the evolved bot against all opponents."""
+    result = _run_benchmark_core(benchmark_games)
+    _print_benchmark("Evolved Bot Benchmark", result)
+
+
+@main.command()
+@click.argument("replay_file", type=click.Path(exists=True))
+def replay(replay_file: str) -> None:
+    """Play back a recorded game."""
+    _run_replay(replay_file)
+
+
+# ── Bot & map resolution ────────────────────────────────────────────────
+
+
+def _resolve_bots_and_map(
+    bot_names: list[str],
+    map_name: str,
+    players: int | None,
+    config: GameConfig,
+) -> list[str]:
+    """Resolve bot names and validate against map player count."""
+    if map_name.startswith("random:"):
+        flavour = map_name.split(":", 1)[1]
+        if flavour not in FLAVOURS:
+            click.echo(f"Unknown flavour: {flavour}. Available: {', '.join(FLAVOUR_NAMES)}")
+            sys.exit(1)
+        num_players = players or len(bot_names) or 2
+        if not bot_names:
+            bot_names = ["aggressive", "expander"][:num_players]
+            if num_players == 3:
+                bot_names = ["aggressive", "expander", "random"]
+        if len(bot_names) != num_players:
+            click.echo(
+                f"Need {num_players} bots for {num_players}-player map, got {len(bot_names)}"
+            )
+            sys.exit(1)
+    elif map_name in MAP_PLAYER_COUNTS:
+        expected = MAP_PLAYER_COUNTS[map_name]
+        if not bot_names:
+            if expected == 3:
+                bot_names = ["aggressive", "expander", "random"]
+            else:
+                bot_names = ["aggressive", "expander"]
+        if len(bot_names) != expected:
+            click.echo(f"{expected}-player map requires exactly {expected} bots")
+            sys.exit(1)
+    else:
+        if not bot_names:
+            bot_names = ["aggressive", "expander"]
+        if len(bot_names) != 2:
+            click.echo("2-player map requires exactly 2 bots")
+            sys.exit(1)
+    return bot_names
+
+
+# ── Settings persistence ────────────────────────────────────────────────
+
 
 def _load_settings() -> dict[str, str]:
     """Load saved menu settings from disk. Returns empty dict on any error."""
@@ -64,6 +294,9 @@ def _save_settings(settings: dict[str, str]) -> None:
         _SETTINGS_PATH.write_text(json.dumps(settings, indent=2) + "\n")
     except OSError:
         pass
+
+
+# ── Menu helpers ────────────────────────────────────────────────────────
 
 
 def _parse_num(s: str, default: float) -> float:
@@ -123,217 +356,18 @@ def _build_config_from_menu(result: dict[str, str]) -> GameConfig:
 def make_bot(name: str) -> Bot:
     cls = BOT_REGISTRY.get(name)
     if cls is None:
-        print(f"Unknown bot: {name}. Available: {', '.join(BOT_REGISTRY)}")
+        click.echo(f"Unknown bot: {name}. Available: {', '.join(BOT_REGISTRY)}")
         sys.exit(1)
     return cls()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Clauralux — an Auralux clone")
-    parser.add_argument(
-        "command",
-        nargs="?",
-        default=None,
-        choices=[
-            "watch",
-            "headless",
-            "tournament",
-            "campaign",
-            "train",
-            "megatrain",
-            "replay",
-            "benchmark",
-        ],
-        help="Game mode. Omit for GUI menu.",
-    )
-    parser.add_argument(
-        "--bot",
-        action="append",
-        default=[],
-        help=f"Bot type (can repeat). Available: {', '.join(BOT_REGISTRY)}",
-    )
-    parser.add_argument(
-        "--map",
-        default="2p",
-        help=f"Map: {', '.join(MAP_REGISTRY)} or random:FLAVOUR ({', '.join(FLAVOUR_NAMES)})",
-    )
-    parser.add_argument(
-        "--players",
-        type=int,
-        default=None,
-        help="Number of players for random maps (default: inferred from --bot count)",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Random seed for map generation",
-    )
-    parser.add_argument(
-        "--games",
-        type=int,
-        default=100,
-        help="Number of games for tournament mode (default: 100)",
-    )
-    parser.add_argument(
-        "--max-ticks",
-        type=int,
-        default=30000,
-        help="Max ticks before draw (default: 30000)",
-    )
-    parser.add_argument(
-        "--speed",
-        type=float,
-        default=2.0,
-        help="Unit speed (default: 2.0)",
-    )
-    parser.add_argument(
-        "--level",
-        type=int,
-        default=1,
-        help="Campaign starting level (default: 1)",
-    )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="Run campaign in headless mode",
-    )
-
-    # Training arguments.
-    parser.add_argument(
-        "--population",
-        type=int,
-        default=80,
-        help="Population size for training (default: 80)",
-    )
-    parser.add_argument(
-        "--generations",
-        type=int,
-        default=200,
-        help="Number of generations for training (default: 200)",
-    )
-    parser.add_argument(
-        "--games-per-eval",
-        type=int,
-        default=40,
-        help="Games per fitness evaluation (default: 40)",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=0,
-        help="Parallel workers for training (0 = all CPUs, default: 0)",
-    )
-    parser.add_argument(
-        "--output",
-        default="data/evolved_weights.json",
-        help="Output path for trained weights (default: data/evolved_weights.json)",
-    )
-    parser.add_argument(
-        "--from-scratch",
-        action="store_true",
-        help="Train from scratch, ignoring existing weights",
-    )
-    parser.add_argument(
-        "--self-play",
-        action="store_true",
-        help="Train only against other evolved bots (no hand-crafted opponents)",
-    )
-
-    # Benchmark arguments.
-    parser.add_argument(
-        "--benchmark-games",
-        type=int,
-        default=50,
-        help="Games per opponent for benchmark (default: 50)",
-    )
-
-    # Replay arguments.
-    parser.add_argument(
-        "--record",
-        default=None,
-        metavar="FILE",
-        help="Record the game to a replay JSON file",
-    )
-    parser.add_argument(
-        "replay_file",
-        nargs="?",
-        default=None,
-        help="Replay file to play back (for 'replay' command)",
-    )
-
-    args = parser.parse_args()
-
-    # No command given — launch GUI menu.
-    if args.command is None:
-        _run_gui_menu()
-        return
-
-    if args.command == "campaign":
-        _run_campaign(args)
-        return
-
-    if args.command == "train":
-        _run_train(args)
-        return
-
-    if args.command == "megatrain":
-        _run_megatrain(args)
-        return
-
-    if args.command == "benchmark":
-        _run_benchmark(args)
-        return
-
-    if args.command == "replay":
-        _run_replay(args)
-        return
-
-    config = GameConfig(max_ticks=args.max_ticks, unit_speed=args.speed)
-    bot_names: list[str] = args.bot
-    map_name: str = args.map
-
-    # Resolve map and bot defaults.
-    if map_name.startswith("random:"):
-        flavour = map_name.split(":", 1)[1]
-        if flavour not in FLAVOURS:
-            print(f"Unknown flavour: {flavour}. Available: {', '.join(FLAVOUR_NAMES)}")
-            sys.exit(1)
-        config = flavour_config(config, flavour)
-        num_players = args.players or len(bot_names) or 2
-        if not bot_names:
-            bot_names = ["aggressive", "expander"][:num_players]
-            if num_players == 3:
-                bot_names = ["aggressive", "expander", "random"]
-        if len(bot_names) != num_players:
-            print(f"Need {num_players} bots for {num_players}-player map, got {len(bot_names)}")
-            sys.exit(1)
-    elif map_name == "3p":
-        if not bot_names:
-            bot_names = ["aggressive", "expander", "random"]
-        if len(bot_names) != 3:
-            print("3-player map requires exactly 3 bots")
-            sys.exit(1)
-    else:
-        if not bot_names:
-            bot_names = ["aggressive", "expander"]
-        if len(bot_names) != 2:
-            print("2-player map requires exactly 2 bots")
-            sys.exit(1)
-
-    if args.command == "watch":
-        _run_visual(config, map_name, bot_names, args.seed, record_path=args.record)
-    elif args.command == "headless":
-        _run_headless(config, map_name, bot_names, args.seed, record_path=args.record)
-    elif args.command == "tournament":
-        _run_tournament(config, map_name, bot_names, args.games, args.seed)
+# ── GUI menu ────────────────────────────────────────────────────────────
 
 
 def _get_player_count_for_map(map_value: str) -> int:
     """Derive player count from a map selection."""
     if map_value in MAP_PLAYER_COUNTS:
         return MAP_PLAYER_COUNTS[map_value]
-    # Random maps: look at the "players" option, default to 2.
     return 2
 
 
@@ -510,18 +544,15 @@ def _run_gui_menu() -> None:
         config = flavour_config(config, flavour)
 
     if mode == "campaign":
-        import argparse
-
         campaign_start_str = result.get("campaign_start", "1. First Light")
         campaign_start = int(campaign_start_str.split(".")[0])
-        fake_args = argparse.Namespace(
-            bot=[bot_names[0]],
+        _run_campaign(
+            bot_name=bot_names[0],
+            start_level=campaign_start,
             max_ticks=config.max_ticks or 30000,
             speed=config.unit_speed,
-            level=campaign_start,
             headless=False,
         )
-        _run_campaign(fake_args)
     elif mode == "watch":
         commentary_enabled = result.get("commentary", "On") == "On"
         pause_on_events = result.get("pause_on_events", "Off") == "On"
@@ -537,6 +568,9 @@ def _run_gui_menu() -> None:
         _run_headless(config, map_name, bot_names, None)
     elif mode == "tournament":
         _run_tournament(config, map_name, bot_names, 100, None)
+
+
+# ── Game runners ────────────────────────────────────────────────────────
 
 
 def _resolve_map(
@@ -574,10 +608,10 @@ def _run_visual(
     state, bots = _make_state_and_bots(config, map_name, bot_names, seed)
     bot_name_map = {PlayerId(i + 1): name for i, name in enumerate(bot_names)}
     recorder = GameRecorder(config, state, bot_name_map) if record_path else None
-    print(f"Watching: {' vs '.join(bot_names)} on {map_name}")
+    click.echo(f"Watching: {' vs '.join(bot_names)} on {map_name}")
     if record_path:
-        print(f"Recording to: {record_path}")
-    print("Controls: Space/Enter=pause, Up/Down=speed, Q=quit")
+        click.echo(f"Recording to: {record_path}")
+    click.echo("Controls: Space/Enter=pause, Up/Down=speed, Q=quit")
     runner = VisualRunner(
         config,
         state,
@@ -590,9 +624,9 @@ def _run_visual(
     result = runner.run()
     _print_result(result, bot_names)
     if recorder and record_path:
-        replay = recorder.finish(result.winner, result.ticks, result.is_draw)
-        save_replay(replay, record_path)
-        print(f"Replay saved to: {record_path}")
+        replay_data = recorder.finish(result.winner, result.ticks, result.is_draw)
+        save_replay(replay_data, record_path)
+        click.echo(f"Replay saved to: {record_path}")
 
 
 def _run_headless(
@@ -608,14 +642,14 @@ def _run_headless(
     state, bots = _make_state_and_bots(config, map_name, bot_names, seed)
     bot_name_map = {PlayerId(i + 1): name for i, name in enumerate(bot_names)}
     recorder = GameRecorder(config, state, bot_name_map) if record_path else None
-    print(f"Running: {' vs '.join(bot_names)} on {map_name}")
+    click.echo(f"Running: {' vs '.join(bot_names)} on {map_name}")
     runner = HeadlessRunner(config, state, bots, recorder=recorder)
     result = runner.run()
     _print_result(result, bot_names)
     if recorder and record_path:
-        replay = recorder.finish(result.winner, result.ticks, result.is_draw)
-        save_replay(replay, record_path)
-        print(f"Replay saved to: {record_path}")
+        replay_data = recorder.finish(result.winner, result.ticks, result.is_draw)
+        save_replay(replay_data, record_path)
+        click.echo(f"Replay saved to: {record_path}")
 
 
 def _run_tournament(
@@ -635,7 +669,7 @@ def _run_tournament(
         bot_name = name
         bot_factories[PlayerId(i + 1)] = lambda _pid, bn=bot_name: make_bot(bn)  # type: ignore[misc]
 
-    print(f"Tournament: {' vs '.join(bot_names)} on {map_name}, {num_games} games")
+    click.echo(f"Tournament: {' vs '.join(bot_names)} on {map_name}, {num_games} games")
     result = run_tournament(
         config=config,
         map_factory=map_factory,
@@ -643,98 +677,110 @@ def _run_tournament(
         num_games=num_games,
     )
 
-    print(f"\nResults ({result.total_games} games):")
+    click.echo(f"\nResults ({result.total_games} games):")
     for i, name in enumerate(bot_names):
         pid = PlayerId(i + 1)
         wins = result.wins.get(pid, 0)
         rate = result.win_rate(pid)
-        print(f"  P{pid} ({name}): {wins} wins ({rate:.1%})")
-    print(f"  Draws: {result.draws}")
-    print(f"  Avg ticks: {result.avg_ticks:.0f}")
+        click.echo(f"  P{pid} ({name}): {wins} wins ({rate:.1%})")
+    click.echo(f"  Draws: {result.draws}")
+    click.echo(f"  Avg ticks: {result.avg_ticks:.0f}")
 
 
-def _run_campaign(args: argparse.Namespace) -> None:
+def _run_campaign(
+    bot_name: str,
+    start_level: int,
+    max_ticks: int,
+    speed: float,
+    headless: bool,
+) -> None:
     from clauralux.runner.visual import VisualRunner
 
-    start = max(1, min(args.level, len(CAMPAIGN_LEVELS)))
-    p1_bot_name = args.bot[0] if args.bot else "expander"
+    start = max(1, min(start_level, len(CAMPAIGN_LEVELS)))
 
-    print(f"Campaign: P1 = {p1_bot_name}, starting at level {start}")
-    print(f"{'─' * 50}")
+    click.echo(f"Campaign: P1 = {bot_name}, starting at level {start}")
+    click.echo(f"{'─' * 50}")
 
     for i, level in enumerate(CAMPAIGN_LEVELS[start - 1 :], start=start):
-        base_config = GameConfig(max_ticks=args.max_ticks, unit_speed=args.speed)
+        base_config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
         config = base_config.replace(**level.config_overrides)
         state = level.map_factory(config)
 
         # Build bots: P1 is the user's choice, rest from level definition.
-        bots: dict[PlayerId, Bot] = {PlayerId(1): make_bot(p1_bot_name)}
-        for pid, bot_name in level.enemy_bots.items():
-            bots[pid] = make_bot(bot_name)
+        bots: dict[PlayerId, Bot] = {PlayerId(1): make_bot(bot_name)}
+        for pid, bname in level.enemy_bots.items():
+            bots[pid] = make_bot(bname)
 
         enemies = ", ".join(f"P{pid}={name}" for pid, name in level.enemy_bots.items())
-        print(f"\nLevel {i}: {level.name}")
-        print(f"  {level.description}")
-        print(f"  Enemies: {enemies}")
+        click.echo(f"\nLevel {i}: {level.name}")
+        click.echo(f"  {level.description}")
+        click.echo(f"  Enemies: {enemies}")
 
-        campaign_bot_names = {PlayerId(1): p1_bot_name}
+        campaign_bot_names = {PlayerId(1): bot_name}
         for pid, bname in level.enemy_bots.items():
             campaign_bot_names[pid] = bname
 
-        if args.headless:
+        if headless:
             from clauralux.runner.headless import HeadlessRunner
 
             result = HeadlessRunner(config, state, bots).run()
         else:
-            print("  Controls: Space=pause, Up/Down=speed, Q=quit")
+            click.echo("  Controls: Space=pause, Up/Down=speed, Q=quit")
             result = VisualRunner(config, state, bots, bot_names=campaign_bot_names).run()
 
-        bot_names = [p1_bot_name, *level.enemy_bots.values()]
-        _print_result(result, bot_names)
+        level_bot_names = [bot_name, *level.enemy_bots.values()]
+        _print_result(result, level_bot_names)
 
         if result.winner == PlayerId(1):
-            print("  >>> VICTORY! <<<")
+            click.echo("  >>> VICTORY! <<<")
         elif result.is_draw:
-            print("  >>> DRAW <<<")
+            click.echo("  >>> DRAW <<<")
         else:
-            print("  >>> DEFEAT <<<")
+            click.echo("  >>> DEFEAT <<<")
             break
 
     else:
-        print(f"\n{'─' * 50}")
-        print("CAMPAIGN COMPLETE!")
+        click.echo(f"\n{'─' * 50}")
+        click.echo("CAMPAIGN COMPLETE!")
 
 
-def _run_train(args: argparse.Namespace) -> None:
-    from clauralux.training.trainer import TrainingConfig, train
+def _run_train(
+    population: int,
+    generations: int,
+    games_per_eval: int,
+    workers: int,
+    output: str,
+    from_scratch: bool,
+    self_play: bool,
+    benchmark_games: int,
+) -> None:
+    from clauralux.training.trainer import TrainingConfig
+    from clauralux.training.trainer import train as run_training
 
-    print("Running pre-training benchmark...")
-    before = _run_benchmark_core(args.benchmark_games)
+    click.echo("Running pre-training benchmark...")
+    before = _run_benchmark_core(benchmark_games)
     _print_benchmark("Pre-training benchmark", before)
-    print()
+    click.echo()
 
     config = TrainingConfig(
-        population_size=args.population,
-        generations=args.generations,
-        games_per_eval=args.games_per_eval,
-        workers=args.workers,
-        output_path=args.output,
-        from_scratch=args.from_scratch,
-        self_play=args.self_play,
+        population_size=population,
+        generations=generations,
+        games_per_eval=games_per_eval,
+        workers=workers,
+        output_path=output,
+        from_scratch=from_scratch,
+        self_play=self_play,
     )
-    train(config)
+    run_training(config)
 
-    print("\nRunning post-training benchmark...")
-    after = _run_benchmark_core(args.benchmark_games)
+    click.echo("\nRunning post-training benchmark...")
+    after = _run_benchmark_core(benchmark_games)
     _print_benchmark_comparison(before, after)
 
 
-def _run_megatrain(args: argparse.Namespace) -> None:
-    from clauralux.training.trainer import TrainingConfig, train
-
-    output = args.output
-    workers = args.workers
-    from_scratch = args.from_scratch
+def _run_megatrain(workers: int, output: str, from_scratch: bool) -> None:
+    from clauralux.training.trainer import TrainingConfig
+    from clauralux.training.trainer import train as run_training
 
     phases = [
         (
@@ -783,25 +829,28 @@ def _run_megatrain(args: argparse.Namespace) -> None:
         ),
     ]
 
-    print("=" * 60)
-    print("MEGATRAIN — no-holds-barred evolved bot training")
-    print("  3 phases, 1000 total generations, pop=150, games/eval=80")
-    print(f"  Output: {output}")
-    print("=" * 60)
+    click.echo("=" * 60)
+    click.echo("MEGATRAIN — no-holds-barred evolved bot training")
+    click.echo("  3 phases, 1000 total generations, pop=150, games/eval=80")
+    click.echo(f"  Output: {output}")
+    click.echo("=" * 60)
 
-    print("\nRunning pre-training benchmark...")
+    click.echo("\nRunning pre-training benchmark...")
     before = _run_benchmark_core(50)
     _print_benchmark("Pre-training benchmark", before)
 
     for label, config in phases:
-        print(f"\n{'─' * 60}")
-        print(label)
-        print(f"{'─' * 60}")
-        train(config)
+        click.echo(f"\n{'─' * 60}")
+        click.echo(label)
+        click.echo(f"{'─' * 60}")
+        run_training(config)
 
-    print("\nRunning post-training benchmark...")
+    click.echo("\nRunning post-training benchmark...")
     after = _run_benchmark_core(50)
     _print_benchmark_comparison(before, after)
+
+
+# ── Benchmark ───────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -895,13 +944,13 @@ def _run_benchmark_core(games_per_opponent: int) -> BenchmarkResult:
 
 def _print_benchmark(label: str, result: BenchmarkResult) -> None:
     """Print a standalone benchmark table."""
-    print(f"{label} ({result.games_per_opponent} games per opponent per map)")
-    print("=" * 60)
+    click.echo(f"{label} ({result.games_per_opponent} games per opponent per map)")
+    click.echo("=" * 60)
     for name, (w, d, ls) in result.per_opponent.items():
         pct = result.win_pct(name)
-        print(f"  vs {name:<14s}  {w:3d}W {d:3d}D {ls:3d}L  ({pct:5.1f}%)")
-    print("=" * 60)
-    print(
+        click.echo(f"  vs {name:<14s}  {w:3d}W {d:3d}D {ls:3d}L  ({pct:5.1f}%)")
+    click.echo("=" * 60)
+    click.echo(
         f"  Overall: {result.total_wins}W {result.total_draws}D "
         f"{result.total_losses}L / {result.total_games} games "
         f"({result.overall_win_pct:.1f}% win rate)"
@@ -910,12 +959,12 @@ def _print_benchmark(label: str, result: BenchmarkResult) -> None:
 
 def _print_benchmark_comparison(before: BenchmarkResult, after: BenchmarkResult) -> None:
     """Print a side-by-side before/after comparison."""
-    print()
-    print("=" * 70)
-    print("TRAINING RESULTS — Before vs After")
-    print("=" * 70)
-    print(f"  {'Opponent':<14s}  {'Before':>7s}  {'After':>7s}  {'Change':>8s}")
-    print(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
+    click.echo()
+    click.echo("=" * 70)
+    click.echo("TRAINING RESULTS — Before vs After")
+    click.echo("=" * 70)
+    click.echo(f"  {'Opponent':<14s}  {'Before':>7s}  {'After':>7s}  {'Change':>8s}")
+    click.echo(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
 
     for name in before.per_opponent:
         before_pct = before.win_pct(name)
@@ -927,9 +976,9 @@ def _print_benchmark_comparison(before: BenchmarkResult, after: BenchmarkResult)
             arrow = f"{delta:5.1f}%"
         else:
             arrow = "     —"
-        print(f"  {name:<14s}  {before_pct:6.1f}%  {after_pct:6.1f}%  {arrow}")
+        click.echo(f"  {name:<14s}  {before_pct:6.1f}%  {after_pct:6.1f}%  {arrow}")
 
-    print(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
+    click.echo(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
     before_overall = before.overall_win_pct
     after_overall = after.overall_win_pct
     delta = after_overall - before_overall
@@ -939,26 +988,19 @@ def _print_benchmark_comparison(before: BenchmarkResult, after: BenchmarkResult)
         arrow = f"{delta:5.1f}%"
     else:
         arrow = "     —"
-    print(f"  {'OVERALL':<14s}  {before_overall:6.1f}%  {after_overall:6.1f}%  {arrow}")
-    print("=" * 70)
+    click.echo(f"  {'OVERALL':<14s}  {before_overall:6.1f}%  {after_overall:6.1f}%  {arrow}")
+    click.echo("=" * 70)
 
 
-def _run_benchmark(args: argparse.Namespace) -> None:
-    result = _run_benchmark_core(args.benchmark_games)
-    _print_benchmark("Evolved Bot Benchmark", result)
+# ── Replay ──────────────────────────────────────────────────────────────
 
 
-def _run_replay(args: argparse.Namespace) -> None:
+def _run_replay(replay_file: str) -> None:
     from clauralux.replay.recorder import load_replay, replay_to_game
     from clauralux.replay.replay_bot import ReplayBot
     from clauralux.runner.visual import VisualRunner
 
-    replay_file = args.replay_file
-    if not replay_file:
-        print("Usage: clauralux replay <file.json>")
-        sys.exit(1)
-
-    print(f"Loading replay: {replay_file}")
+    click.echo(f"Loading replay: {replay_file}")
     data = load_replay(replay_file)
     config, state, schedule = replay_to_game(data)
 
@@ -980,9 +1022,11 @@ def _run_replay(args: argparse.Namespace) -> None:
             bot_name_map[pid] = "unknown"
 
     result_info = data.result
-    print(f"Replaying: {' vs '.join(bot_name_map.values())}")
-    print(f"Original result: winner=P{result_info.get('winner')}, ticks={result_info.get('ticks')}")
-    print("Controls: Space=pause, Up/Down=speed, Q=quit")
+    click.echo(f"Replaying: {' vs '.join(bot_name_map.values())}")
+    click.echo(
+        f"Original result: winner=P{result_info.get('winner')}, ticks={result_info.get('ticks')}"
+    )
+    click.echo("Controls: Space=pause, Up/Down=speed, Q=quit")
 
     runner = VisualRunner(config, state, bots, bot_names=bot_name_map)
     result = runner.run()
@@ -990,12 +1034,15 @@ def _run_replay(args: argparse.Namespace) -> None:
     _print_result(result, bot_names_list)
 
 
+# ── Utilities ───────────────────────────────────────────────────────────
+
+
 def _print_result(result: GameResult, bot_names: list[str]) -> None:
     if result.is_draw:
-        print(f"  Draw after {result.ticks} ticks")
+        click.echo(f"  Draw after {result.ticks} ticks")
     else:
         winner_idx = int(result.winner) - 1 if result.winner is not None else -1
         if 0 <= winner_idx < len(bot_names):
-            print(f"  P{result.winner} ({bot_names[winner_idx]}) wins in {result.ticks} ticks")
+            click.echo(f"  P{result.winner} ({bot_names[winner_idx]}) wins in {result.ticks} ticks")
         else:
-            print(f"  P{result.winner} wins in {result.ticks} ticks")
+            click.echo(f"  P{result.winner} wins in {result.ticks} ticks")
