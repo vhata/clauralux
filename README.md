@@ -18,7 +18,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 ## Features
 
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
-- **15 built-in bots** (each with strategic intent narration)
+- **16 built-in bots** including a human player (each with strategic intent narration)
 - **Evolutionary training** — train evolved or neural bots against all other bots, with difficulty-weighted opponents and stagnation resets
 - **Neural net bot** — MLP reads 12 game-state features and outputs 29 decision parameters + action priorities each tick, adapting strategy to the board state in real time
 - **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
@@ -26,7 +26,8 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
 - **Replay system** — record, save, load, and play back games
 - **Themed random maps** — strategic, rush, chokepoint, swarm
-- **18-level campaign** — gradual difficulty progression from passive to dual-aggressive enemies
+- **8 hand-crafted fun maps** — grid, fortress, bridge, ring, corridor, archipelago, spiral, diamond
+- **24-level campaign** — 4 acts teaching mechanics, introducing each bot, and scaling to multi-front warfare. Play as a human with mouse controls.
 - **Tournament system** — run N games and compare bot win rates
 - **GUI menu** — configure and launch games without touching the CLI, with bot strategy descriptions and settings persistence
 - **Visual renderer** — pygame-ce with pulsing suns, unit swarms, trajectory lines, capture flashes, and detailed pause overlay
@@ -50,6 +51,22 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 | **baiter** | Sends small bait attacks to draw defenders, then hits the weakened suns. |
 | **evolved** | Phase-based strategy with 3 game phases (early/mid/late), each with 25 evolvable parameters. Trained by playing thousands of games against all other bots. |
 | **neural** | MLP neural network (12 inputs, 32 hidden, 29 outputs) that reads game state and adapts strategy each tick. 1373 evolvable weights. Controls action priority ordering as well as all decision parameters. |
+| **human** | You! Click suns to select, click targets to send units, click selected to upgrade. Shift+click sends half. |
+
+## Maps
+
+Standard maps scale by player count (2p through 6p). The fun maps are all 2-player with unique strategic puzzles:
+
+| Map | Description |
+|-----|-------------|
+| **grid** | 5x4 grid of suns. Players in opposite corners. Control the lines. |
+| **fortress** | Heavily fortified center sun surrounded by a ring. Time your assault. |
+| **bridge** | Two clusters connected by a narrow chain. Hold the bridge. |
+| **ring** | 12 suns in a circle with a big center prize. Clockwise or counter? |
+| **corridor** | Two long rows of suns. Head-to-head slugfest, nowhere to hide. |
+| **archipelago** | Island clusters with gaps between them. Leap between islands. |
+| **spiral** | Suns spiraling outward from a fortified center. Race in or out? |
+| **diamond** | Diamond shape with fortified center and flanking routes. |
 
 ## Prerequisites
 
@@ -66,79 +83,93 @@ uv run maturin develop --release   # Build the Rust engine
 uv run pre-commit install
 
 # Launch the GUI menu
-uv run clauralux
+./clauralux
+
+# Play the campaign
+./clauralux campaign
 ```
 
 ## Usage
 
 ### GUI Menu
 
-Just run `uv run clauralux` with no arguments to get a pygame menu where you pick mode, map, bots, and speed.
+Just run `./clauralux` with no arguments to get a pygame menu where you pick mode, map, bots, and speed.
 
 ### CLI
 
 ```bash
-# Watch a game
-clauralux watch --bot aggressive --bot expander
+# Play as human against a bot
+./clauralux watch --bot human --bot aggressive
 
-# Watch a random rush map
-clauralux watch --map random:rush --bot aggressive --bot expander
+# Play on a themed map
+./clauralux watch --map fortress --bot human --bot evolved
+
+# Watch two bots fight
+./clauralux watch --bot evolved --bot neural
+
+# Watch on a random rush map
+./clauralux watch --map random:rush --bot aggressive --bot expander
 
 # Run headless (fast, no display)
-clauralux headless --bot expander --bot aggressive
+./clauralux headless --bot expander --bot aggressive
 
 # Tournament: 100 games, compare win rates
-clauralux tournament --bot aggressive --bot expander --games 100
+./clauralux tournament --bot aggressive --bot expander --games 100
 
-# Campaign: play through 18 levels
-clauralux campaign --bot expander
+# Campaign: play through 24 levels as a human
+./clauralux campaign
 
-# Campaign: start from level 10, headless
-clauralux campaign --bot aggressive --level 10 --headless
+# Campaign: watch a bot play, start from level 10
+./clauralux campaign --bot evolved --level 10
 
 # Record a game for replay
-clauralux watch --bot evolved --bot sniper --record game.json
+./clauralux watch --bot evolved --bot sniper --record game.json
 
 # Play back a recorded game
-clauralux replay game.json
+./clauralux replay game.json
 ```
 
 ### Training
 
 ```bash
 # Train the evolved bot (default: pop=80, gens=200, 40 games/eval)
-clauralux train
+./clauralux train
 
 # Train from scratch (ignore existing weights)
-clauralux train --from-scratch
+./clauralux train --from-scratch
 
 # Self-play: train only against other evolved bots
-clauralux train --self-play
+./clauralux train --self-play
 
 # Quick training run
-clauralux train --population 20 --generations 20 --games-per-eval 10
+./clauralux train --population 20 --generations 20 --games-per-eval 10
 
 # Megatrain: intensive 3-phase training with automatic benchmarking
-clauralux megatrain --from-scratch
+./clauralux megatrain --from-scratch
 
 # Benchmark the evolved bot against all opponents
-clauralux benchmark
-clauralux benchmark --benchmark-games 100
+./clauralux benchmark
+./clauralux benchmark --benchmark-games 100
 
 # Train the neural net bot (needs bigger population for 1373 weights)
-clauralux train --neural --from-scratch
-clauralux megatrain --neural --from-scratch
+./clauralux train --neural --from-scratch
+./clauralux megatrain --neural --from-scratch
 
 # Benchmark the neural bot
-clauralux benchmark --neural
+./clauralux benchmark --neural
 ```
 
 Training automatically runs a before/after benchmark and shows a comparison table.
 
 ### Visual Controls
 
-- **Space / Enter** — pause/unpause (shows detailed player status overlay when paused)
-- **Up/Down arrows** — speed up/slow down (2x increments, up to 64x)
+- **Left-click own sun** — select it
+- **Left-click target** — send units from selected sun
+- **Shift+click target** — send half your units
+- **Click selected sun** — upgrade it
+- **Right-click** — deselect
+- **Space / Enter** — pause/unpause
+- **Up/Down arrows** — speed up/slow down (2x increments)
 - **Q/Escape** — quit
 
 ## Writing a Bot
@@ -173,8 +204,9 @@ src/clauralux/
         game.py         # Tick-based engine
         config.py       # All tunable parameters
         mapgen.py       # Themed random map generation
-        campaign.py     # 18-level campaign definitions
-    bots/               # Bot framework + 15 strategies
+        maps.py         # 13 hand-crafted maps (standard + themed)
+        campaign.py     # 24-level campaign across 4 acts
+    bots/               # Bot framework + 16 strategies (including human)
         base.py         # Abstract Bot class with intent narration
         registry.py     # Central bot registry
         evolved.py      # Phase-based bot with 3x25 evolvable weights
@@ -194,7 +226,7 @@ src/clauralux/
     replay/             # Game recording and playback
     cli.py              # CLI + GUI entry point
 rust/                   # Rust game engine (compiled via PyO3/maturin)
-tests/                  # 127 tests
+tests/                  # 131 tests
 ```
 
 ## Development
