@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from clauralux.engine.actions import Action, SendUnits
+from clauralux.engine.types import SunId
 from clauralux.engine.view import GameView, SunView
 
 from .base import Bot
@@ -25,6 +26,12 @@ class BaiterBot(Bot):
         if not my_suns or not targets:
             self._intent = "Nothing to bait." if not targets else "No suns left."
             return []
+
+        # Reset stale bait target.
+        if self._bait_target_id is not None:
+            bait_sun = view.sun_by_id(SunId(self._bait_target_id))
+            if bait_sun is None or bait_sun.owner == view.my_id:
+                self._bait_target_id = None
 
         # If we baited recently, look for the weakened sun to hit.
         if self._bait_target_id is not None and view.tick - self._bait_tick < 200:
