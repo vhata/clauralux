@@ -17,6 +17,14 @@ from clauralux.engine.maps import (
     five_player_pentagon,
     four_player_cross,
     six_player_hex,
+    the_archipelago,
+    the_bridge,
+    the_corridor,
+    the_diamond,
+    the_fortress,
+    the_grid,
+    the_ring,
+    the_spiral,
     three_player_triangle,
     two_player_simple,
 )
@@ -33,6 +41,14 @@ MAP_REGISTRY: dict[str, MapFactory] = {
     "4p": four_player_cross,
     "5p": five_player_pentagon,
     "6p": six_player_hex,
+    "grid": the_grid,
+    "fortress": the_fortress,
+    "bridge": the_bridge,
+    "ring": the_ring,
+    "corridor": the_corridor,
+    "archipelago": the_archipelago,
+    "spiral": the_spiral,
+    "diamond": the_diamond,
 }
 
 # Player count for each map. Random maps derive from --players or bot count.
@@ -42,6 +58,14 @@ MAP_PLAYER_COUNTS: dict[str, int] = {
     "4p": 4,
     "5p": 5,
     "6p": 6,
+    "grid": 2,
+    "fortress": 2,
+    "bridge": 2,
+    "ring": 2,
+    "corridor": 2,
+    "archipelago": 2,
+    "spiral": 2,
+    "diamond": 2,
 }
 
 FLAVOUR_NAMES = list(FLAVOURS.keys())
