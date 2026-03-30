@@ -133,8 +133,17 @@ def main() -> None:
         "command",
         nargs="?",
         default=None,
-        choices=["watch", "headless", "tournament", "campaign", "train", "replay", "benchmark"],
-        help="watch/headless/tournament/campaign/train/replay/benchmark. Omit for GUI menu.",
+        choices=[
+            "watch",
+            "headless",
+            "tournament",
+            "campaign",
+            "train",
+            "megatrain",
+            "replay",
+            "benchmark",
+        ],
+        help="Game mode. Omit for GUI menu.",
     )
     parser.add_argument(
         "--bot",
@@ -265,6 +274,10 @@ def main() -> None:
 
     if args.command == "train":
         _run_train(args)
+        return
+
+    if args.command == "megatrain":
+        _run_megatrain(args)
         return
 
     if args.command == "benchmark":
@@ -662,6 +675,81 @@ def _run_train(args: argparse.Namespace) -> None:
         self_play=args.self_play,
     )
     train(config)
+
+
+def _run_megatrain(args: argparse.Namespace) -> None:
+    from clauralux.training.trainer import TrainingConfig, train
+
+    output = args.output
+    workers = args.workers
+    from_scratch = args.from_scratch
+
+    phases = [
+        (
+            "Phase 1: Train vs hand-crafted bots",
+            TrainingConfig(
+                population_size=150,
+                generations=500,
+                games_per_eval=80,
+                workers=workers,
+                output_path=output,
+                from_scratch=from_scratch,
+                elite_count=10,
+                hall_of_fame_interval=3,
+                stagnation_limit=10,
+                stagnation_inject=0.25,
+            ),
+        ),
+        (
+            "Phase 2: Self-play refinement",
+            TrainingConfig(
+                population_size=150,
+                generations=300,
+                games_per_eval=80,
+                workers=workers,
+                output_path=output,
+                self_play=True,
+                elite_count=10,
+                hall_of_fame_interval=3,
+                stagnation_limit=10,
+                stagnation_inject=0.25,
+            ),
+        ),
+        (
+            "Phase 3: Final polish vs hand-crafted bots",
+            TrainingConfig(
+                population_size=150,
+                generations=200,
+                games_per_eval=80,
+                workers=workers,
+                output_path=output,
+                elite_count=10,
+                hall_of_fame_interval=3,
+                stagnation_limit=10,
+                stagnation_inject=0.25,
+            ),
+        ),
+    ]
+
+    print("=" * 60)
+    print("MEGATRAIN — no-holds-barred evolved bot training")
+    print("  3 phases, 1000 total generations, pop=150, games/eval=80")
+    print(f"  Output: {output}")
+    print("=" * 60)
+
+    for label, config in phases:
+        print(f"\n{'─' * 60}")
+        print(label)
+        print(f"{'─' * 60}")
+        train(config)
+
+    print(f"\n{'=' * 60}")
+    print("MEGATRAIN COMPLETE — running benchmark...")
+    print(f"{'=' * 60}\n")
+
+    # Run a thorough benchmark at the end.
+    args.benchmark_games = 100
+    _run_benchmark(args)
 
 
 def _run_benchmark(args: argparse.Namespace) -> None:
