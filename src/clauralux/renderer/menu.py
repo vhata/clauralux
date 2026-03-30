@@ -8,6 +8,7 @@ import pygame
 from clauralux.engine.types import PlayerId
 
 from .colors import BACKGROUND, TEXT, TEXT_DIM, get_color
+from .renderer import _create_icon, _set_macos_dock_name
 
 # Colour names for labelling player slots.
 PLAYER_COLOUR_NAMES: dict[int, str] = {
@@ -63,7 +64,9 @@ class MenuScreen:
         self._width = 800
         self._height = 600
 
+        _set_macos_dock_name()
         pygame.init()
+        pygame.display.set_icon(_create_icon())
         self._screen = pygame.display.set_mode((self._width, self._height))
         pygame.display.set_caption(title)
         self._font = pygame.font.SysFont("monospace", 16)

@@ -41,7 +41,7 @@ def _create_icon() -> pygame.Surface:
 def _set_macos_dock_name() -> None:
     """Set macOS dock name to 'Clauralux' instead of 'Python'."""
     try:
-        from Foundation import NSBundle
+        from Foundation import NSBundle  # type: ignore[import-not-found,unused-ignore]
 
         bundle = NSBundle.mainBundle()
         info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
