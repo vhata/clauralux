@@ -156,6 +156,131 @@ def watch(
 
 
 @main.command()
+@click.option(
+    "--vs",
+    "enemies",
+    multiple=True,
+    help="Enemy bot type (repeat for multiple). Omit for guided selection.",
+)
+@click.option("--vibe", default=None, help="Map vibe: open, tight, fortified, swarming.")
+def play(enemies: tuple[str, ...], vibe: str | None) -> None:
+    """Play a quick game as a human. Guided setup if no flags given."""
+    enemy_list, map_flavour = _play_guided(list(enemies), vibe)
+    num_players = len(enemy_list) + 1
+    config = GameConfig(max_ticks=30000)
+    config = flavour_config(config, map_flavour)
+    state = generate_map(config, map_flavour, num_players)
+    bots: dict[PlayerId, Bot] = {PlayerId(1): make_bot("human")}
+    bot_name_map: dict[PlayerId, str] = {PlayerId(1): "human"}
+    for i, enemy_name in enumerate(enemy_list):
+        pid = PlayerId(i + 2)
+        bots[pid] = make_bot(enemy_name)
+        bot_name_map[pid] = enemy_name
+    from clauralux.runner.visual import VisualRunner
+
+    click.echo(f"\nYou vs {', '.join(enemy_list)} on a {map_flavour} map. Let's go!")
+    click.echo("Controls: Click to select/send, Shift+click for half, right-click deselect")
+    runner = VisualRunner(
+        config,
+        state,
+        bots,
+        bot_names=bot_name_map,
+        commentary_enabled=True,
+        pause_on_events=True,
+    )
+    result = runner.run()
+    _print_result(result, ["human", *enemy_list])
+
+
+# ── Play mode: interactive guided setup ─────────────────────────────────
+
+_DIFFICULTY_PRESETS: dict[str, list[list[str]]] = {
+    "easy": [
+        ["passive"],
+        ["random"],
+        ["passive", "random"],
+    ],
+    "medium": [
+        ["expander"],
+        ["rush"],
+        ["turtle"],
+        ["expander", "random"],
+    ],
+    "hard": [
+        ["aggressive"],
+        ["sniper"],
+        ["baiter"],
+        ["economic"],
+        ["coordinator"],
+        ["aggressive", "expander"],
+    ],
+    "brutal": [
+        ["evolved"],
+        ["neural"],
+        ["aggressive", "aggressive"],
+        ["sniper", "baiter"],
+        ["evolved", "aggressive"],
+    ],
+}
+
+_VIBE_MAP: dict[str, str] = {
+    "open": "strategic",
+    "tight": "rush",
+    "fortified": "chokepoint",
+    "swarming": "swarm",
+}
+
+
+def _play_guided(enemies: list[str], vibe: str | None) -> tuple[list[str], str]:
+    """Interactive setup for play mode. Returns (enemy_list, map_flavour)."""
+    import random as _rng
+
+    # If enemies already specified, skip difficulty selection.
+    if not enemies:
+        click.echo()
+        click.echo("  HOW TOUGH DO YOU WANT IT?")
+        click.echo()
+        click.echo("  1. Easy      — gentle opponents, great for learning")
+        click.echo("  2. Medium    — a fair challenge, tests your skills")
+        click.echo("  3. Hard      — specialist bots that exploit weaknesses")
+        click.echo("  4. Brutal    — the toughest bots, trained or paired up")
+        click.echo("  5. Surprise  — dealer's choice!")
+        click.echo()
+        choice = click.prompt("  Pick a number", type=click.IntRange(1, 5), default=2)
+        if choice == 5:
+            difficulty = _rng.choice(["easy", "medium", "hard", "brutal"])
+        else:
+            difficulty = ["easy", "medium", "hard", "brutal"][choice - 1]
+        enemies = list(_rng.choice(_DIFFICULTY_PRESETS[difficulty]))
+        click.echo(f"  → {', '.join(enemies).title()}")
+
+    # If vibe not specified, ask.
+    if vibe is None:
+        click.echo()
+        click.echo("  WHAT KIND OF MAP?")
+        click.echo()
+        click.echo("  1. Open      — big map, lots of room to expand")
+        click.echo("  2. Tight     — close quarters, fast and aggressive")
+        click.echo("  3. Fortified — key chokepoints to fight over")
+        click.echo("  4. Swarming  — tons of small suns, constant action")
+        click.echo("  5. Surprise  — random!")
+        click.echo()
+        choice = click.prompt("  Pick a number", type=click.IntRange(1, 5), default=5)
+        if choice == 5:
+            vibe = _rng.choice(list(_VIBE_MAP.keys()))
+        else:
+            vibe = list(_VIBE_MAP.keys())[choice - 1]
+        click.echo(f"  → {vibe.title()}")
+
+    map_flavour = _VIBE_MAP.get(vibe, vibe)
+    if map_flavour not in FLAVOURS:
+        click.echo(f"Unknown vibe: {vibe}. Using 'strategic'.")
+        map_flavour = "strategic"
+
+    return enemies, map_flavour
+
+
+@main.command()
 @_game_options
 @click.option("--record", default=None, metavar="FILE", help="Record game to replay JSON file.")
 def headless(

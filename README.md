@@ -99,6 +99,17 @@ uv run pre-commit install
 
 Just run `./clauralux` with no arguments to get a pygame menu where you pick mode, map, bots, and speed.
 
+### Quick Play
+
+The easiest way to start a game. Guides you through setup with friendly prompts:
+
+```bash
+./clauralux play                          # guided: pick difficulty and map vibe
+./clauralux play --vs aggressive          # pick your enemy, guided map
+./clauralux play --vs sniper --vs baiter  # 1v2, guided map
+./clauralux play --vibe tight             # guided enemies, tight map
+```
+
 ### CLI
 
 ```bash

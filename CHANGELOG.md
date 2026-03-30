@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Quick play mode (`./clauralux play`) with guided difficulty and map selection for beginners
 - Human player with mouse controls (click to select, click to send, Shift for half, right-click deselect)
 - Neural net bot (MLP: 12 inputs → 32 hidden → 29 outputs, 1373 evolvable weights) with adaptive strategy and action priority ordering
 - Phase-based evolved bot (3 game phases x 25 params + 2 transition thresholds = 77 params)
