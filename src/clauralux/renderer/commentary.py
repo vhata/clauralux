@@ -406,6 +406,9 @@ class CommentaryGenerator:
         state: GameState,
         bot_intents: dict[PlayerId, str] | None = None,
     ) -> str:
+        if state.winner == NEUTRAL:
+            return f"It's a DRAW at tick {event.tick}! Neither player could finish the other!"
+
         # Find leader by sun count.
         sun_counts: dict[PlayerId, int] = Counter()
         for sun in state.suns.values():
