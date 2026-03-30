@@ -77,6 +77,11 @@ class ExpanderBot(Bot):
         return best
 
     def _send_from_all(self, my_suns: tuple[SunView, ...], target: SunView) -> list[Action]:
+        # Don't waste units on a doomed attack — only send if we can overwhelm.
+        total_available = sum(max(0, s.garrison - self._reserve) for s in my_suns)
+        if total_available < target.garrison:
+            return []
+
         actions: list[Action] = []
         for sun in my_suns:
             available = sun.garrison - self._reserve
