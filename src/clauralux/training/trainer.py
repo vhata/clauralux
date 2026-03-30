@@ -229,6 +229,8 @@ def train(config: TrainingConfig) -> list[float]:
                     if config.self_play
                     else []
                 )
+                # Note: ProcessPoolExecutor pickles hall_of_fame per task, so each
+                # worker gets an immutable snapshot. No lock needed.
                 tasks.append(
                     (
                         ind.genome,
