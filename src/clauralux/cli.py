@@ -439,6 +439,29 @@ def _build_menu_options(saved: dict[str, str] | None = None) -> list[MenuOption]
             )
         )
 
+    commentary_choices = ["On", "Off"]
+    pause_events_choices = ["Off", "On"]
+    options.append(
+        MenuOption(
+            key="commentary",
+            label="Commentary",
+            description="Sports-commentator text overlay describing the action.",
+            choices=commentary_choices,
+            default_index=_saved_index(commentary_choices, s.get("commentary"), 0),
+            visible_when=lambda v: v["mode"] == "watch",
+        ),
+    )
+    options.append(
+        MenuOption(
+            key="pause_on_events",
+            label="Pause on Events",
+            description="Pause on big moments (captures, eliminations) with commentary.",
+            choices=pause_events_choices,
+            default_index=_saved_index(pause_events_choices, s.get("pause_on_events"), 0),
+            visible_when=lambda v: v["mode"] == "watch" and v.get("commentary") == "On",
+        ),
+    )
+
     options.append(
         MenuOption(
             key="campaign_start",
@@ -500,7 +523,16 @@ def _run_gui_menu() -> None:
         )
         _run_campaign(fake_args)
     elif mode == "watch":
-        _run_visual(config, map_name, bot_names, None)
+        commentary_enabled = result.get("commentary", "On") == "On"
+        pause_on_events = result.get("pause_on_events", "Off") == "On"
+        _run_visual(
+            config,
+            map_name,
+            bot_names,
+            None,
+            commentary_enabled=commentary_enabled,
+            pause_on_events=pause_on_events,
+        )
     elif mode == "headless":
         _run_headless(config, map_name, bot_names, None)
     elif mode == "tournament":
@@ -533,6 +565,8 @@ def _run_visual(
     bot_names: list[str],
     seed: int | None,
     record_path: str | None = None,
+    commentary_enabled: bool = True,
+    pause_on_events: bool = False,
 ) -> None:
     from clauralux.replay.recorder import GameRecorder, save_replay
     from clauralux.runner.visual import VisualRunner
@@ -543,8 +577,16 @@ def _run_visual(
     print(f"Watching: {' vs '.join(bot_names)} on {map_name}")
     if record_path:
         print(f"Recording to: {record_path}")
-    print("Controls: Space=pause, Up/Down=speed, Q=quit")
-    runner = VisualRunner(config, state, bots, bot_names=bot_name_map, recorder=recorder)
+    print("Controls: Space/Enter=pause, Up/Down=speed, Q=quit")
+    runner = VisualRunner(
+        config,
+        state,
+        bots,
+        bot_names=bot_name_map,
+        recorder=recorder,
+        commentary_enabled=commentary_enabled,
+        pause_on_events=pause_on_events,
+    )
     result = runner.run()
     _print_result(result, bot_names)
     if recorder and record_path:

@@ -9,6 +9,7 @@ from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
 from clauralux.engine.state import GameState
 from clauralux.engine.types import PlayerId
+from clauralux.renderer.commentary import CommentarySystem
 from clauralux.renderer.renderer import PygameRenderer
 from clauralux.replay.recorder import GameRecorder
 from clauralux.runner.headless import GameResult
@@ -26,6 +27,8 @@ class VisualRunner:
         bots: Mapping[PlayerId, Bot],
         bot_names: Mapping[PlayerId, str] | None = None,
         recorder: GameRecorder | None = None,
+        commentary_enabled: bool = True,
+        pause_on_events: bool = False,
     ) -> None:
         self._config = config
         self._game = Game(config, initial_state)
@@ -35,6 +38,16 @@ class VisualRunner:
         self._renderer = PygameRenderer(config)
         self._paused = False
         self._speed_multiplier = 1
+        self._commentary = CommentarySystem(
+            config=config,
+            initial_state=initial_state,
+            bot_names=self._bot_names,
+            screen_width=self._renderer._window_width,
+            screen_height=self._renderer._window_height,
+            map_to_screen=self._renderer.map_to_screen,
+            enabled=commentary_enabled,
+            pause_on_events=pause_on_events,
+        )
 
     @property
     def game(self) -> Game:
@@ -79,6 +92,16 @@ class VisualRunner:
                                 game.apply_actions(player_id, actions)
                     game.tick()
 
+                    # Update commentary after each tick.
+                    intents = {
+                        pid: bot.intent
+                        for pid, bot in self._bots.items()
+                        if pid not in game.state.eliminated
+                    }
+                    if self._commentary.update(game.state, intents):
+                        self._paused = True
+                        break
+
             # Draw with bot intents, speed, and pause state.
             intents = {
                 pid: "💀" if pid in game.state.eliminated else bot.intent
@@ -90,6 +113,7 @@ class VisualRunner:
                 speed=self._speed_multiplier,
                 paused=self._paused,
                 bot_names=self._bot_names,
+                overlay_callback=self._commentary.draw,
             )
             renderer.tick()
 
@@ -111,8 +135,10 @@ class VisualRunner:
         """Handle a key press. Returns False if we should quit."""
         if key == pygame.K_ESCAPE or key == pygame.K_q:
             return False
-        elif key == pygame.K_SPACE:
+        elif key in (pygame.K_SPACE, pygame.K_RETURN):
             self._paused = not self._paused
+            if not self._paused:
+                self._commentary.consume_pause()
         elif key == pygame.K_UP:
             self._speed_multiplier = min(self._speed_multiplier * 2, 64)
         elif key == pygame.K_DOWN:

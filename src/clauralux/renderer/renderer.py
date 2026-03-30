@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import pygame
 
@@ -50,6 +51,7 @@ class PygameRenderer:
         speed: int = 1,
         paused: bool = False,
         bot_names: dict[PlayerId, str] | None = None,
+        overlay_callback: Callable[[pygame.Surface], None] | None = None,
     ) -> None:
         """Draw the full game state."""
         self._update_flash_events(state)
@@ -58,6 +60,8 @@ class PygameRenderer:
         self._draw_unit_groups(state)
         self._draw_flash_events()
         self._draw_suns(state)
+        if overlay_callback is not None:
+            overlay_callback(self._screen)
         self._draw_hud(state, intents or {}, speed=speed, paused=paused, bot_names=bot_names or {})
         if paused and not state.winner:
             self._draw_pause_overlay(state, intents or {}, bot_names or {})
