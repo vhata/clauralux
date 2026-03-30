@@ -309,7 +309,7 @@ def train(config: TrainingConfig) -> list[float]:
                 # Replace the worst individuals with fresh random genomes.
                 ranked = sorted(population, key=lambda ind: ind.fitness, reverse=True)
                 for i in range(num_inject):
-                    ranked[-(i + 1)] = Individual(genome=random_genome(rng))
+                    ranked[-(i + 1)] = Individual(genome=_make_random())
                 population = ranked
                 stagnation_count = 0
                 print(
