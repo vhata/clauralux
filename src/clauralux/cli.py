@@ -164,8 +164,8 @@ def tournament(
     "--bot",
     "-b",
     "bot_name",
-    default="expander",
-    help=f"Bot for player 1. Available: {_BOT_NAMES_STR}",
+    default="human",
+    help=f"Bot for player 1 (default: human). Available: {_BOT_NAMES_STR}",
 )
 @click.option("--level", type=int, default=1, help="Campaign starting level.")
 @click.option("--max-ticks", type=int, default=30000, help="Max ticks before draw.")

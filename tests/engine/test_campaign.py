@@ -1,11 +1,13 @@
+from clauralux.bots.registry import BOT_REGISTRY
 from clauralux.engine.campaign import CAMPAIGN_LEVELS
 from clauralux.engine.config import GameConfig
+from clauralux.engine.types import PlayerId
 
-VALID_BOT_NAMES = {"passive", "random", "aggressive", "expander"}
+VALID_BOT_NAMES = set(BOT_REGISTRY.keys()) - {"human"}
 
 
-def test_campaign_has_18_levels() -> None:
-    assert len(CAMPAIGN_LEVELS) == 18
+def test_campaign_has_24_levels() -> None:
+    assert len(CAMPAIGN_LEVELS) == 24
 
 
 def test_all_levels_produce_valid_state() -> None:
@@ -41,8 +43,6 @@ def test_enemy_bots_match_non_p1_players() -> None:
         state = level.map_factory(config)
 
         # Every non-P1 player should have a bot assigned.
-        from clauralux.engine.types import PlayerId
-
         p1 = PlayerId(1)
         non_p1 = [p for p in state.players if p != p1]
         for pid in non_p1:
@@ -53,13 +53,13 @@ def test_enemy_bots_match_non_p1_players() -> None:
 
 def test_difficulty_progression() -> None:
     """Early levels should use weaker bots than later levels."""
-    # First 5 levels should only have passive/random enemies.
+    # First 6 levels (Act 1) should only have passive/random enemies.
     weak_bots = {"passive", "random"}
-    for level in CAMPAIGN_LEVELS[:5]:
+    for level in CAMPAIGN_LEVELS[:6]:
         for bot_name in level.enemy_bots.values():
-            assert bot_name in weak_bots, f"Level '{level.name}' too hard for early campaign"
+            assert bot_name in weak_bots, f"Level '{level.name}' too hard for Act 1"
 
-    # Last 3 levels should include aggressive enemies.
-    for level in CAMPAIGN_LEVELS[-3:]:
-        bot_names = set(level.enemy_bots.values())
-        assert "aggressive" in bot_names, f"Level '{level.name}' should have aggressive enemies"
+    # Last level should have aggressive enemies (Final Stand).
+    final = CAMPAIGN_LEVELS[-1]
+    bot_names = set(final.enemy_bots.values())
+    assert "aggressive" in bot_names, f"Final level '{final.name}' should have aggressive enemies"

@@ -52,6 +52,7 @@ class PygameRenderer:
         paused: bool = False,
         bot_names: dict[PlayerId, str] | None = None,
         overlay_callback: Callable[[pygame.Surface], None] | None = None,
+        selected_sun_id: SunId | None = None,
     ) -> None:
         """Draw the full game state."""
         self._update_flash_events(state)
@@ -60,6 +61,8 @@ class PygameRenderer:
         self._draw_unit_groups(state)
         self._draw_flash_events()
         self._draw_suns(state)
+        if selected_sun_id is not None:
+            self._draw_selection(state, selected_sun_id)
         if overlay_callback is not None:
             overlay_callback(self._screen)
         self._draw_hud(state, intents or {}, speed=speed, paused=paused, bot_names=bot_names or {})
@@ -143,6 +146,33 @@ class PygameRenderer:
             text_surface = self._font.render(garrison_text, True, TEXT)
             text_rect = text_surface.get_rect(center=(sx, sy))
             self._screen.blit(text_surface, text_rect)
+
+    def _draw_selection(self, state: GameState, sun_id: SunId) -> None:
+        """Draw a selection ring around the chosen sun and a targeting line to cursor."""
+        sun = state.suns.get(sun_id)
+        if sun is None:
+            return
+        sx, sy = self.map_to_screen(sun.position.x, sun.position.y)
+        radius = 18 + (sun.level - 1) * 6
+        color = get_bright_color(sun.owner)
+
+        # Pulsing selection ring.
+        ring_radius = radius + 10
+        ring_surface = pygame.Surface((ring_radius * 2 + 4, ring_radius * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(
+            ring_surface,
+            (*color, 180),
+            (ring_radius + 2, ring_radius + 2),
+            ring_radius,
+            3,
+        )
+        self._screen.blit(ring_surface, (sx - ring_radius - 2, sy - ring_radius - 2))
+
+        # Targeting line from selected sun to mouse cursor.
+        mx, my = pygame.mouse.get_pos()
+        line_surface = pygame.Surface((self._window_width, self._window_height), pygame.SRCALPHA)
+        pygame.draw.line(line_surface, (*color, 60), (sx, sy), (mx, my), 2)
+        self._screen.blit(line_surface, (0, 0))
 
     def _draw_unit_groups(self, state: GameState) -> None:
         for group in state.unit_groups:
