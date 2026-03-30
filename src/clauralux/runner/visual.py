@@ -34,7 +34,13 @@ class VisualRunner:
         self._bots = bots
         self._bot_names: dict[PlayerId, str] = dict(bot_names) if bot_names else {}
         self._recorder = recorder
-        self._renderer = PygameRenderer(config)
+        # Build descriptive window title.
+        if bot_names:
+            names = " vs ".join(bot_names.values())
+            title = f"Clauralux — {names}"
+        else:
+            title = "Clauralux"
+        self._renderer = PygameRenderer(config, title=title)
         self._paused = False
         self._speed_multiplier = 1
 
