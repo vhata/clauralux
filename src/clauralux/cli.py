@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from clauralux.bots.base import Bot
@@ -665,6 +666,11 @@ def _run_campaign(args: argparse.Namespace) -> None:
 def _run_train(args: argparse.Namespace) -> None:
     from clauralux.training.trainer import TrainingConfig, train
 
+    print("Running pre-training benchmark...")
+    before = _run_benchmark_core(args.benchmark_games)
+    _print_benchmark("Pre-training benchmark", before)
+    print()
+
     config = TrainingConfig(
         population_size=args.population,
         generations=args.generations,
@@ -675,6 +681,10 @@ def _run_train(args: argparse.Namespace) -> None:
         self_play=args.self_play,
     )
     train(config)
+
+    print("\nRunning post-training benchmark...")
+    after = _run_benchmark_core(args.benchmark_games)
+    _print_benchmark_comparison(before, after)
 
 
 def _run_megatrain(args: argparse.Namespace) -> None:
@@ -737,36 +747,66 @@ def _run_megatrain(args: argparse.Namespace) -> None:
     print(f"  Output: {output}")
     print("=" * 60)
 
+    print("\nRunning pre-training benchmark...")
+    before = _run_benchmark_core(50)
+    _print_benchmark("Pre-training benchmark", before)
+
     for label, config in phases:
         print(f"\n{'─' * 60}")
         print(label)
         print(f"{'─' * 60}")
         train(config)
 
-    print(f"\n{'=' * 60}")
-    print("MEGATRAIN COMPLETE — running benchmark...")
-    print(f"{'=' * 60}\n")
-
-    # Run a thorough benchmark at the end.
-    args.benchmark_games = 100
-    _run_benchmark(args)
+    print("\nRunning post-training benchmark...")
+    after = _run_benchmark_core(50)
+    _print_benchmark_comparison(before, after)
 
 
-def _run_benchmark(args: argparse.Namespace) -> None:
+@dataclass
+class BenchmarkResult:
+    """Results of benchmarking the evolved bot against all opponents."""
+
+    # Per-opponent: {name: (wins, draws, losses)}
+    per_opponent: dict[str, tuple[int, int, int]]
+    games_per_opponent: int
+
+    @property
+    def total_wins(self) -> int:
+        return sum(w for w, _d, _l in self.per_opponent.values())
+
+    @property
+    def total_draws(self) -> int:
+        return sum(d for _w, d, _l in self.per_opponent.values())
+
+    @property
+    def total_losses(self) -> int:
+        return sum(ls for _w, _d, ls in self.per_opponent.values())
+
+    @property
+    def total_games(self) -> int:
+        return self.total_wins + self.total_draws + self.total_losses
+
+    @property
+    def overall_win_pct(self) -> float:
+        return self.total_wins / max(self.total_games, 1) * 100
+
+    def win_pct(self, name: str) -> float:
+        w, d, ls = self.per_opponent[name]
+        total = w + d + ls
+        return w / max(total, 1) * 100
+
+
+def _run_benchmark_core(games_per_opponent: int) -> BenchmarkResult:
+    """Run the evolved bot against all opponents, return structured results."""
     from clauralux.bots.registry import BOT_REGISTRY
     from clauralux.engine.mapgen import generate_map
     from clauralux.runner.tournament import run_tournament
 
-    games_per_opponent = args.benchmark_games
     config = GameConfig(max_ticks=10_000)
-
-    # Benchmark against every bot except passive and evolved itself.
     opponents = [name for name in BOT_REGISTRY if name not in ("passive", "evolved")]
 
-    # Maps: fixed 2p + all random flavours.
-    map_factories: list[tuple[str, MapFactory]] = [("2p", two_player_simple)]
+    map_factories: list[MapFactory] = [two_player_simple]
     for flavour in FLAVOUR_NAMES:
-        fl = flavour
 
         def _make_map_factory(f: str) -> MapFactory:
             def factory(cfg: GameConfig) -> GameState:
@@ -774,64 +814,96 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 
             return factory
 
-        map_factories.append((f"random:{fl}", _make_map_factory(fl)))
+        map_factories.append(_make_map_factory(flavour))
 
-    total_wins = 0
-    total_losses = 0
-    total_draws = 0
-    total_games = 0
+    def _make_bot_factory(name: str) -> Callable[[PlayerId], Bot]:
+        def factory(_pid: PlayerId) -> Bot:
+            return make_bot(name)
 
-    print(f"Evolved Bot Benchmark ({games_per_opponent} games per opponent per map)")
-    print("=" * 60)
+        return factory
+
+    per_opponent: dict[str, tuple[int, int, int]] = {}
 
     for opp_name in opponents:
         opp_wins = 0
         opp_losses = 0
         opp_draws = 0
-        opp_games = 0
 
-        def _make_opp_factory(name: str) -> Callable[[PlayerId], Bot]:
-            def factory(_pid: PlayerId) -> Bot:
-                return make_bot(name)
-
-            return factory
-
-        for _map_label, map_factory in map_factories:
+        for map_factory in map_factories:
             result = run_tournament(
                 config=config,
                 map_factory=map_factory,
                 bot_factories={
-                    PlayerId(1): _make_opp_factory("evolved"),
-                    PlayerId(2): _make_opp_factory(opp_name),
+                    PlayerId(1): _make_bot_factory("evolved"),
+                    PlayerId(2): _make_bot_factory(opp_name),
                 },
                 num_games=games_per_opponent,
             )
-            w = result.wins.get(PlayerId(1), 0)
-            losses = result.wins.get(PlayerId(2), 0)
-            d = result.draws
-            opp_wins += w
-            opp_losses += losses
-            opp_draws += d
-            opp_games += result.total_games
+            opp_wins += result.wins.get(PlayerId(1), 0)
+            opp_losses += result.wins.get(PlayerId(2), 0)
+            opp_draws += result.draws
 
-        win_pct = opp_wins / max(opp_games, 1) * 100
-        print(
-            f"  vs {opp_name:<14s}  "
-            f"{opp_wins:3d}W {opp_draws:3d}D {opp_losses:3d}L  "
-            f"({win_pct:5.1f}%)"
-        )
+        per_opponent[opp_name] = (opp_wins, opp_draws, opp_losses)
 
-        total_wins += opp_wins
-        total_losses += opp_losses
-        total_draws += opp_draws
-        total_games += opp_games
-
-    print("=" * 60)
-    overall_pct = total_wins / max(total_games, 1) * 100
-    print(
-        f"  Overall: {total_wins}W {total_draws}D {total_losses}L "
-        f"/ {total_games} games ({overall_pct:.1f}% win rate)"
+    return BenchmarkResult(
+        per_opponent=per_opponent,
+        games_per_opponent=games_per_opponent,
     )
+
+
+def _print_benchmark(label: str, result: BenchmarkResult) -> None:
+    """Print a standalone benchmark table."""
+    print(f"{label} ({result.games_per_opponent} games per opponent per map)")
+    print("=" * 60)
+    for name, (w, d, ls) in result.per_opponent.items():
+        pct = result.win_pct(name)
+        print(f"  vs {name:<14s}  {w:3d}W {d:3d}D {ls:3d}L  ({pct:5.1f}%)")
+    print("=" * 60)
+    print(
+        f"  Overall: {result.total_wins}W {result.total_draws}D "
+        f"{result.total_losses}L / {result.total_games} games "
+        f"({result.overall_win_pct:.1f}% win rate)"
+    )
+
+
+def _print_benchmark_comparison(before: BenchmarkResult, after: BenchmarkResult) -> None:
+    """Print a side-by-side before/after comparison."""
+    print()
+    print("=" * 70)
+    print("TRAINING RESULTS — Before vs After")
+    print("=" * 70)
+    print(f"  {'Opponent':<14s}  {'Before':>7s}  {'After':>7s}  {'Change':>8s}")
+    print(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
+
+    for name in before.per_opponent:
+        before_pct = before.win_pct(name)
+        after_pct = after.win_pct(name)
+        delta = after_pct - before_pct
+        if delta > 0:
+            arrow = f"+{delta:5.1f}%"
+        elif delta < 0:
+            arrow = f"{delta:5.1f}%"
+        else:
+            arrow = "     —"
+        print(f"  {name:<14s}  {before_pct:6.1f}%  {after_pct:6.1f}%  {arrow}")
+
+    print(f"  {'─' * 14}  {'─' * 7}  {'─' * 7}  {'─' * 8}")
+    before_overall = before.overall_win_pct
+    after_overall = after.overall_win_pct
+    delta = after_overall - before_overall
+    if delta > 0:
+        arrow = f"+{delta:5.1f}%"
+    elif delta < 0:
+        arrow = f"{delta:5.1f}%"
+    else:
+        arrow = "     —"
+    print(f"  {'OVERALL':<14s}  {before_overall:6.1f}%  {after_overall:6.1f}%  {arrow}")
+    print("=" * 70)
+
+
+def _run_benchmark(args: argparse.Namespace) -> None:
+    result = _run_benchmark_core(args.benchmark_games)
+    _print_benchmark("Evolved Bot Benchmark", result)
 
 
 def _run_replay(args: argparse.Namespace) -> None:
