@@ -75,6 +75,9 @@ impl GameConfig {
         default_player_garrison: f64,
         seed: Option<i64>,
     ) -> Self {
+        // Treat max_ticks <= 0 as None (no tick limit).
+        let max_ticks = max_ticks.filter(|&t| t > 0);
+
         GameConfig {
             map_width,
             map_height,
@@ -113,7 +116,10 @@ impl GameConfig {
                     "unit_speed" => new.unit_speed = value.extract()?,
                     "attack_ratio" => new.attack_ratio = value.extract()?,
                     "decision_interval" => new.decision_interval = value.extract()?,
-                    "max_ticks" => new.max_ticks = value.extract()?,
+                    "max_ticks" => {
+                        let raw: Option<i64> = value.extract()?;
+                        new.max_ticks = raw.filter(|&t| t > 0);
+                    }
                     "ticks_per_second" => new.ticks_per_second = value.extract()?,
                     "default_neutral_garrison" => new.default_neutral_garrison = value.extract()?,
                     "default_player_garrison" => new.default_player_garrison = value.extract()?,
