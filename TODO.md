@@ -9,6 +9,8 @@ Training speed improvements, ordered by expected impact.
 - [x] **NumPy vectorized MLP forward pass** — neural bot uses NumPy instead of scalar Python math
 - [x] **Parity tests** — catch drift between Python and Rust evolved bot implementations
 - [x] **Rust MLP forward pass for neural training** — `run_neural_training_game()` with feature extraction, recurrent MLP, and output decoding all in Rust (25x faster, 18.5ms/game)
+- [x] **Port opponent bots to Rust** — all 12 hand-crafted bots ported, entire training pipeline runs in Rust (47x faster vs Python bots, 0.15ms/game)
+- [x] **Worst-case fitness weighting** — fitness = 0.7 * avg + 0.3 * worst_opponent prevents lopsided specialisation
 
 ## High Impact
 - [ ] **Port opponent bots to Rust** — the 12 hand-crafted bots are simple heuristics (50-100 lines each). Porting them would let ALL training games use the Rust path, not just evolved-vs-evolved. Currently most training time is still spent on Python opponents.
