@@ -51,6 +51,7 @@ pub struct TState {
     pub tick: i64,
     pub winner: Option<i64>,
     pub eliminated: HashSet<i64>,
+    pub last_capture_tick: i64,
 }
 
 pub enum TAction {
@@ -156,6 +157,7 @@ pub fn resolve_arrivals(state: &mut TState, cfg: &TConfig) {
                 if let Some(reset) = cfg.capture_level_reset {
                     tgt.level = reset;
                 }
+                state.last_capture_tick = state.tick;
             }
         }
     }
@@ -174,6 +176,12 @@ pub fn produce_units(state: &mut TState, cfg: &TConfig) {
     }
 }
 
+/// Stagnation timeout: if no sun changes ownership for this many ticks, draw.
+const STAGNATION_DRAW_TICKS: i64 = 3000;
+
+/// Absolute safety limit: never exceed this regardless of progress.
+const ABSOLUTE_MAX_TICKS: i64 = 30_000;
+
 pub fn check_win(state: &mut TState, cfg: &TConfig) {
     let players = state.players.clone();
     for &pid in &players {
@@ -189,8 +197,12 @@ pub fn check_win(state: &mut TState, cfg: &TConfig) {
         state.winner = Some(active[0]);
     } else if active.is_empty() {
         state.winner = Some(0);
-    } else if let Some(max_ticks) = cfg.max_ticks {
-        if state.tick >= max_ticks {
+    } else {
+        // Draw conditions: hard max OR stagnation (no captures for N ticks).
+        let hard_max = cfg.max_ticks.unwrap_or(ABSOLUTE_MAX_TICKS);
+        let stagnant = state.tick - state.last_capture_tick >= STAGNATION_DRAW_TICKS;
+
+        if state.tick >= hard_max || (state.tick >= hard_max / 2 && stagnant) {
             state.winner = Some(0);
         }
     }
@@ -630,6 +642,7 @@ pub fn run_training_game(
         tick: 0,
         winner: None,
         eliminated: HashSet::new(),
+        last_capture_tick: 0,
     };
 
     let params_p1 = EvolvedParams::from_genome(&genome_p1);
@@ -991,6 +1004,7 @@ pub fn run_neural_training_game(
         tick: 0,
         winner: None,
         eliminated: HashSet::new(),
+        last_capture_tick: 0,
     };
 
     let p1 = players[0];
@@ -1077,6 +1091,7 @@ pub fn run_training_game_vs_bot(
         tick: 0,
         winner: None,
         eliminated: HashSet::new(),
+        last_capture_tick: 0,
     };
 
     let p1 = players[0];
