@@ -682,6 +682,88 @@ pub fn run_training_game(
     }
 }
 
+/// Get the actions a Rust bot would take on a given game state.
+/// Returns a list of (action_type, source_or_sun_id, target_id, count) tuples.
+/// action_type: 0 = SendUnits, 1 = Upgrade.
+#[pyfunction]
+pub fn get_rust_bot_actions(
+    config_py: &config::GameConfig,
+    sun_ids: Vec<i64>,
+    sun_xs: Vec<f64>,
+    sun_ys: Vec<f64>,
+    sun_owners: Vec<i64>,
+    sun_garrisons: Vec<f64>,
+    sun_levels: Vec<i64>,
+    sun_production_ticks: Vec<i64>,
+    group_owners: Vec<i64>,
+    group_counts: Vec<i64>,
+    group_xs: Vec<f64>,
+    group_ys: Vec<f64>,
+    group_targets: Vec<i64>,
+    players: Vec<i64>,
+    tick: i64,
+    eliminated: Vec<i64>,
+    bot_name: String,
+    player_id: i64,
+    rng_seed: u64,
+) -> Vec<(i64, i64, i64, i64)> {
+    let cfg = TConfig {
+        production_interval: config_py.production_interval,
+        production_per_level: config_py.production_per_level,
+        max_sun_level: config_py.max_sun_level,
+        upgrade_costs: config_py.upgrade_costs.clone(),
+        capture_level_reset: config_py.capture_level_reset,
+        unit_speed: config_py.unit_speed,
+        attack_ratio: config_py.attack_ratio,
+        decision_interval: config_py.decision_interval,
+        max_ticks: config_py.max_ticks,
+    };
+
+    let mut suns = HashMap::new();
+    for i in 0..sun_ids.len() {
+        suns.insert(sun_ids[i], TSun {
+            id: sun_ids[i],
+            x: sun_xs[i],
+            y: sun_ys[i],
+            owner: sun_owners[i],
+            level: sun_levels[i],
+            garrison: sun_garrisons[i],
+            production_ticks: sun_production_ticks[i],
+        });
+    }
+
+    let mut groups = Vec::new();
+    for i in 0..group_owners.len() {
+        groups.push(TGroup {
+            owner: group_owners[i],
+            count: group_counts[i],
+            x: group_xs[i],
+            y: group_ys[i],
+            target_sun_id: group_targets[i],
+            vx: 0.0,
+            vy: 0.0,
+        });
+    }
+
+    let state = TState {
+        suns,
+        groups,
+        players,
+        tick,
+        winner: None,
+        eliminated: eliminated.into_iter().collect(),
+        last_capture_tick: 0,
+    };
+
+    let mut bot_state = crate::bots::BotState::new(rng_seed);
+    let actions = crate::bots::run_bot(&bot_name, &state, &cfg, player_id, &mut bot_state);
+
+    actions.iter().map(|a| match a {
+        TAction::Send { source, target, count } => (0, *source, *target, *count),
+        TAction::Upgrade { sun_id } => (1, *sun_id, 0, 0),
+    }).collect()
+}
+
 // ── Neural bot MLP ──────────────────────────────────────────────────
 
 const NUM_FEATURES: usize = 20;

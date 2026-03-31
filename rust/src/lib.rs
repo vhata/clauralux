@@ -40,6 +40,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(training::run_training_game, m)?)?;
     m.add_function(wrap_pyfunction!(training::run_neural_training_game, m)?)?;
     m.add_function(wrap_pyfunction!(training::run_training_game_vs_bot, m)?)?;
+    m.add_function(wrap_pyfunction!(training::get_rust_bot_actions, m)?)?;
 
     Ok(())
 }

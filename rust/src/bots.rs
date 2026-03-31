@@ -603,7 +603,7 @@ pub fn baiter_bot(state: &TState, _cfg: &TConfig, pid: i64, bot: &mut BotState) 
     }).unwrap();
 
     let sender = mine.iter().max_by(|a, b| a.garrison.partial_cmp(&b.garrison).unwrap()).unwrap();
-    if sender.garrison > 5.0 {
+    if sender.garrison >= 3.0 + 2.0 {  // reserve (3) + bait_size (2)
         bot.bait_target_owner = Some(farthest.owner);
         bot.bait_tick = Some(state.tick);
         return vec![TAction::Send { source: sender.id, target: farthest.id, count: 2 }];

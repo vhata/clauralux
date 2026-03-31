@@ -174,6 +174,27 @@ def run_neural_training_game(
     genome_p1: list[float],
     genome_p2: list[float],
 ) -> TrainingResult: ...
+def get_rust_bot_actions(
+    config: GameConfig,
+    sun_ids: list[int],
+    sun_xs: list[float],
+    sun_ys: list[float],
+    sun_owners: list[int],
+    sun_garrisons: list[float],
+    sun_levels: list[int],
+    sun_production_ticks: list[int],
+    group_owners: list[int],
+    group_counts: list[int],
+    group_xs: list[float],
+    group_ys: list[float],
+    group_targets: list[int],
+    players: list[int],
+    tick: int,
+    eliminated: list[int],
+    bot_name: str,
+    player_id: int,
+    rng_seed: int,
+) -> list[tuple[int, int, int, int]]: ...
 def run_training_game_vs_bot(
     config: GameConfig,
     sun_ids: list[int],
