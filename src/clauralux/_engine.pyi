@@ -162,6 +162,18 @@ class TrainingResult:
     p1_suns: int
     total_suns: int
 
+def run_neural_training_game(
+    config: GameConfig,
+    sun_ids: list[int],
+    sun_xs: list[float],
+    sun_ys: list[float],
+    sun_owners: list[int],
+    sun_garrisons: list[float],
+    sun_levels: list[int],
+    players: list[int],
+    genome_p1: list[float],
+    genome_p2: list[float],
+) -> TrainingResult: ...
 def run_training_game(
     config: GameConfig,
     sun_ids: list[int],

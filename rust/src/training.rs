@@ -669,5 +669,365 @@ pub fn run_training_game(
     }
 }
 
+// ── Neural bot MLP ──────────────────────────────────────────────────
+
+const NUM_FEATURES: usize = 20;
+const NUM_HIDDEN: usize = 32;
+const NUM_INPUT: usize = NUM_FEATURES + NUM_HIDDEN; // 52
+const NUM_OUTPUTS: usize = NUM_PHASE_PARAMS + 4;    // 29
+
+/// Parameter ranges [lo, hi] matching PARAM_SPECS in genome.py.
+const PARAM_RANGES: [(f64, f64); 25] = [
+    (0.0, 5.0),    // w_garrison
+    (0.0, 5.0),    // w_distance
+    (-2.0, 2.0),   // w_level
+    (-2.0, 3.0),   // w_neutral_bonus
+    (-2.0, 3.0),   // w_enemy_bonus
+    (0.0, 3.0),    // w_incoming_friendly
+    (0.0, 15.0),   // reserve_per_sun
+    (0.5, 5.0),    // min_force_ratio
+    (0.3, 1.0),    // send_fraction
+    (0.0, 1.0),    // concentrate_vs_split
+    (1.0, 5.0),    // max_targets_per_tick
+    (0.0, 2.0),    // overkill_aversion
+    (10.0, 60.0),  // upgrade_threshold
+    (0.0, 1.0),    // upgrade_vs_attack
+    (1.0, 3.0),    // max_upgrade_level
+    (0.0, 1.0),    // upgrade_when_no_targets
+    (0.0, 2000.0), // eco_phase_duration
+    (10.0, 40.0),  // act_interval
+    (0.0, 1.0),    // early_aggression
+    (0.0, 2.0),    // patience
+    (0.0, 3.0),    // nearest_sun_weight
+    (0.0, 1.0),    // reinforce_own
+    (0.0, 30.0),   // defensive_garrison_threshold
+    (0.0, 3.0),    // w_enemy_incoming
+    (0.0, 1.0),    // threat_response
+];
+
+struct NeuralState {
+    hidden: Vec<f64>,
+}
+
+impl NeuralState {
+    fn new() -> Self {
+        NeuralState { hidden: vec![0.0; NUM_HIDDEN] }
+    }
+}
+
+fn extract_features(state: &TState, cfg: &TConfig, player_id: i64) -> Vec<f64> {
+    let max_ticks = cfg.max_ticks.unwrap_or(10_000) as f64;
+    let max_level = cfg.max_sun_level as f64;
+    let total_suns = state.suns.len().max(1) as f64;
+    let map_w = 1000.0_f64; // default map dimensions
+    let map_h = 800.0_f64;
+    let map_diag = (map_w * map_w + map_h * map_h).sqrt();
+
+    let my_suns: Vec<&TSun> = state.suns.values().filter(|s| s.owner == player_id).collect();
+    let enemy_suns: Vec<&TSun> = state.suns.values().filter(|s| s.owner != player_id && s.owner != 0).collect();
+    let neutral_suns: Vec<&TSun> = state.suns.values().filter(|s| s.owner == 0).collect();
+
+    let my_garrison: f64 = my_suns.iter().map(|s| s.garrison.floor()).sum();
+    let enemy_garrison: f64 = enemy_suns.iter().map(|s| s.garrison.floor()).sum();
+    let total_garrison = (my_garrison + enemy_garrison).max(1.0);
+
+    let my_flight: f64 = state.groups.iter().filter(|g| g.owner == player_id).map(|g| g.count as f64).sum();
+    let enemy_flight: f64 = state.groups.iter().filter(|g| g.owner != player_id).map(|g| g.count as f64).sum();
+    let total_flight = (my_flight + enemy_flight).max(1.0);
+
+    let my_level_sum: f64 = my_suns.iter().map(|s| s.level as f64).sum();
+    let enemy_level_sum: f64 = enemy_suns.iter().map(|s| s.level as f64).sum();
+    let total_level = (my_level_sum + enemy_level_sum).max(1.0);
+
+    let my_count = my_suns.len().max(1) as f64;
+    let enemy_count = enemy_suns.len().max(1) as f64;
+    let my_avg_level = (my_level_sum / my_count) / max_level.max(1.0);
+    let enemy_avg_level = (enemy_level_sum / enemy_count) / max_level.max(1.0);
+    let total_production = (my_level_sum + enemy_level_sum).max(1.0);
+
+    let my_sun_ids: HashSet<i64> = my_suns.iter().map(|s| s.id).collect();
+    let enemy_incoming: f64 = state.groups.iter()
+        .filter(|g| g.owner != player_id && my_sun_ids.contains(&g.target_sun_id))
+        .map(|g| g.count as f64).sum();
+    let threat = (enemy_incoming / my_garrison.max(1.0)).min(1.0);
+
+    let my_sun_count = my_suns.len() as f64;
+    let enemy_sun_count = enemy_suns.len() as f64;
+    let contested = (my_sun_count + enemy_sun_count).max(1.0);
+
+    // Spatial features
+    let mut min_dist_enemy = 1.0_f64;
+    if !my_suns.is_empty() && !enemy_suns.is_empty() {
+        min_dist_enemy = my_suns.iter()
+            .flat_map(|ms| enemy_suns.iter().map(move |es| dist(ms.x, ms.y, es.x, es.y) / map_diag))
+            .fold(f64::INFINITY, f64::min);
+    }
+
+    let mut min_dist_neutral = 1.0_f64;
+    if !my_suns.is_empty() && !neutral_suns.is_empty() {
+        min_dist_neutral = my_suns.iter()
+            .flat_map(|ms| neutral_suns.iter().map(move |ns| dist(ms.x, ms.y, ns.x, ns.y) / map_diag))
+            .fold(f64::INFINITY, f64::min);
+    }
+
+    let weakest_enemy_garrison = if !enemy_suns.is_empty() {
+        enemy_suns.iter().map(|s| s.garrison.floor()).fold(f64::INFINITY, f64::min) / total_garrison.max(1.0)
+    } else { 0.0 };
+
+    let strongest_own_garrison = if !my_suns.is_empty() {
+        my_suns.iter().map(|s| s.garrison.floor()).fold(0.0_f64, f64::max) / total_garrison.max(1.0)
+    } else { 0.0 };
+
+    let garrison_concentration = if my_suns.len() > 1 {
+        let garrs: Vec<f64> = my_suns.iter().map(|s| s.garrison.floor()).collect();
+        let mean = garrs.iter().sum::<f64>() / garrs.len() as f64;
+        if mean > 0.0 {
+            let variance = garrs.iter().map(|g| (g - mean).powi(2)).sum::<f64>() / garrs.len() as f64;
+            (variance.sqrt() / mean).min(1.0)
+        } else { 0.0 }
+    } else { 0.0 };
+
+    let enemy_wave_count = state.groups.iter()
+        .filter(|g| g.owner != player_id && my_sun_ids.contains(&g.target_sun_id))
+        .count() as f64;
+    let wave_pressure = (enemy_wave_count / my_sun_count.max(1.0)).min(1.0);
+
+    let enemy_sun_ids: HashSet<i64> = enemy_suns.iter().map(|s| s.id).collect();
+    let my_offensive: f64 = state.groups.iter()
+        .filter(|g| g.owner == player_id && enemy_sun_ids.contains(&g.target_sun_id))
+        .map(|g| g.count as f64).sum();
+    let offensive_commitment = my_offensive / (my_garrison + my_flight).max(1.0);
+
+    let alive = state.players.iter().filter(|p| !state.eliminated.contains(p)).count() as f64;
+    let total_players = state.players.len().max(1) as f64;
+    let multi_player = ((alive - 1.0) / (total_players - 1.0).max(1.0)).min(1.0);
+
+    vec![
+        (state.tick as f64 / max_ticks).min(1.0),
+        my_sun_count / total_suns,
+        enemy_sun_count / total_suns,
+        neutral_suns.len() as f64 / total_suns,
+        my_garrison / total_garrison,
+        my_flight / total_flight,
+        my_avg_level.min(1.0),
+        enemy_avg_level.min(1.0),
+        my_level_sum / total_production,
+        threat,
+        my_sun_count / contested,
+        my_level_sum / total_level,
+        min_dist_enemy,
+        min_dist_neutral,
+        weakest_enemy_garrison,
+        strongest_own_garrison,
+        garrison_concentration,
+        wave_pressure,
+        offensive_commitment,
+        multi_player,
+    ]
+}
+
+fn mlp_forward(
+    features: &[f64],
+    weights: &[f64],
+    prev_hidden: &[f64],
+) -> (Vec<f64>, Vec<f64>) {
+    // Concatenate features + prev_hidden as input.
+    let mut input = Vec::with_capacity(NUM_INPUT);
+    input.extend_from_slice(features);
+    input.extend_from_slice(prev_hidden);
+
+    let mut idx = 0;
+
+    // Input → Hidden: W_ih is (NUM_HIDDEN, NUM_INPUT), row-major.
+    let mut hidden = vec![0.0; NUM_HIDDEN];
+    for h in 0..NUM_HIDDEN {
+        let mut sum = 0.0;
+        for i in 0..NUM_INPUT {
+            sum += weights[idx + h * NUM_INPUT + i] * input[i];
+        }
+        // Add bias.
+        hidden[h] = (sum + weights[NUM_INPUT * NUM_HIDDEN + h]).tanh();
+    }
+    idx += NUM_INPUT * NUM_HIDDEN + NUM_HIDDEN;
+
+    // Hidden → Output: W_ho is (NUM_OUTPUTS, NUM_HIDDEN), row-major.
+    let mut output = vec![0.0; NUM_OUTPUTS];
+    for o in 0..NUM_OUTPUTS {
+        let mut sum = 0.0;
+        for h in 0..NUM_HIDDEN {
+            sum += weights[idx + o * NUM_HIDDEN + h] * hidden[h];
+        }
+        // Add bias, sigmoid.
+        let z = (sum + weights[idx + NUM_OUTPUTS * NUM_HIDDEN + o]).clamp(-500.0, 500.0);
+        output[o] = 1.0 / (1.0 + (-z).exp());
+    }
+
+    (output, hidden)
+}
+
+fn decode_neural_outputs(raw: &[f64]) -> ([f64; 25], [usize; 4]) {
+    let mut params = [0.0; 25];
+    for i in 0..25 {
+        let (lo, hi) = PARAM_RANGES[i];
+        params[i] = lo + raw[i] * (hi - lo);
+    }
+
+    // Priority: sort indices 0..4 by raw[25..29] descending.
+    let mut priority: [(f64, usize); 4] = [
+        (raw[25], 0), (raw[26], 1), (raw[27], 2), (raw[28], 3),
+    ];
+    priority.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    let order = [priority[0].1, priority[1].1, priority[2].1, priority[3].1];
+
+    (params, order)
+}
+
+fn neural_decide(
+    state: &TState,
+    cfg: &TConfig,
+    weights: &[f64],
+    neural_state: &mut NeuralState,
+    player_id: i64,
+) -> Vec<TAction> {
+    // Extract features and run MLP.
+    let features = extract_features(state, cfg, player_id);
+    let (raw, new_hidden) = mlp_forward(&features, weights, &neural_state.hidden);
+    neural_state.hidden = new_hidden;
+
+    let (params_arr, priority) = decode_neural_outputs(&raw);
+
+    let act_interval = (params_arr[P_ACT_INTERVAL] as i64).max(1);
+    if state.tick % act_interval != 0 {
+        return vec![];
+    }
+
+    let my_suns: Vec<&TSun> = state.suns.values().filter(|s| s.owner == player_id).collect();
+    if my_suns.is_empty() {
+        return vec![];
+    }
+
+    let reserve = params_arr[P_RESERVE_PER_SUN];
+    let mut available: HashMap<i64, f64> = HashMap::new();
+    let mut total_available: f64 = 0.0;
+    for s in &my_suns {
+        let a = (s.garrison - reserve).max(0.0);
+        available.insert(s.id, a);
+        total_available += a;
+    }
+
+    if total_available <= 0.0 {
+        return vec![];
+    }
+
+    // Build an EvolvedParams from the neural output so we can reuse the handlers.
+    let phase_vec: Vec<f64> = params_arr.to_vec();
+    let params = EvolvedParams {
+        phases: [phase_vec.clone(), phase_vec.clone(), phase_vec],
+        transitions: [0.0, 0.0], // Single phase — always phase 0.
+    };
+
+    // Execute handlers in neural-determined priority order.
+    for &action_idx in &priority {
+        let actions = match action_idx {
+            0 => handle_threats(state, &my_suns, &available, &params, 0),
+            1 => handle_reinforce(state, &my_suns, &available, &params, 0),
+            2 => handle_upgrade(state, cfg, &my_suns, total_available, &params, 0, player_id),
+            3 => Some(handle_attack(state, cfg, &my_suns, &mut available.clone(), total_available, &params, 0, player_id)),
+            _ => None,
+        };
+        if let Some(acts) = actions {
+            if !acts.is_empty() {
+                return acts;
+            }
+        }
+    }
+
+    vec![]
+}
+
+/// Run a complete neural training game in pure Rust.
+#[pyfunction]
+pub fn run_neural_training_game(
+    config_py: &config::GameConfig,
+    sun_ids: Vec<i64>,
+    sun_xs: Vec<f64>,
+    sun_ys: Vec<f64>,
+    sun_owners: Vec<i64>,
+    sun_garrisons: Vec<f64>,
+    sun_levels: Vec<i64>,
+    players: Vec<i64>,
+    genome_p1: Vec<f64>,
+    genome_p2: Vec<f64>,
+) -> TrainingResult {
+    let cfg = TConfig {
+        production_interval: config_py.production_interval,
+        production_per_level: config_py.production_per_level,
+        max_sun_level: config_py.max_sun_level,
+        upgrade_costs: config_py.upgrade_costs.clone(),
+        capture_level_reset: config_py.capture_level_reset,
+        unit_speed: config_py.unit_speed,
+        attack_ratio: config_py.attack_ratio,
+        decision_interval: config_py.decision_interval,
+        max_ticks: config_py.max_ticks,
+    };
+
+    let mut suns = HashMap::new();
+    for i in 0..sun_ids.len() {
+        suns.insert(sun_ids[i], TSun {
+            id: sun_ids[i],
+            x: sun_xs[i],
+            y: sun_ys[i],
+            owner: sun_owners[i],
+            level: sun_levels[i],
+            garrison: sun_garrisons[i],
+            production_ticks: 0,
+        });
+    }
+
+    let mut state = TState {
+        suns,
+        groups: Vec::new(),
+        players: players.clone(),
+        tick: 0,
+        winner: None,
+        eliminated: HashSet::new(),
+    };
+
+    let p1 = players[0];
+    let p2 = players[1];
+    let mut ns1 = NeuralState::new();
+    let mut ns2 = NeuralState::new();
+
+    while state.winner.is_none() {
+        if state.tick % cfg.decision_interval == 0 {
+            if !state.eliminated.contains(&p1) {
+                let actions = neural_decide(&state, &cfg, &genome_p1, &mut ns1, p1);
+                process_actions(&mut state, &cfg, p1, &actions);
+            }
+            if !state.eliminated.contains(&p2) {
+                let actions = neural_decide(&state, &cfg, &genome_p2, &mut ns2, p2);
+                process_actions(&mut state, &cfg, p2, &actions);
+            }
+        }
+
+        move_groups(&mut state);
+        resolve_arrivals(&mut state, &cfg);
+        produce_units(&mut state, &cfg);
+        check_win(&mut state, &cfg);
+        state.tick += 1;
+    }
+
+    let winner = state.winner.unwrap_or(0);
+    let p1_suns = state.suns.values().filter(|s| s.owner == p1).count() as i64;
+    let total_suns = state.suns.len() as i64;
+    TrainingResult {
+        winner,
+        ticks: state.tick,
+        is_draw: winner == 0,
+        p1_suns,
+        total_suns,
+    }
+}
+
 // Re-use config module reference
 use crate::config;

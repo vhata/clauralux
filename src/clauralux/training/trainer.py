@@ -112,38 +112,19 @@ def _evaluate_individual(
                 opponents.append(_make_opponent(cls, rng_seed + i))
                 opponent_weights.append(weight)
 
-    # Hall-of-fame and peer genomes can use the fast Rust path for heuristic bots.
+    # Hall-of-fame and peer genomes use the fast Rust path (both evolved and neural).
     rust_opponents: list[list[float]] = []
     rust_weights: list[float] = []
 
     # Play against hall-of-fame bots (previous best genomes).
-    bot_cls: type[Bot] = NeuralBot if neural else EvolvedBot
     for hof_genome in hall_of_fame:
-        g = hof_genome  # capture for closure
-        if not neural:
-            rust_opponents.append(g)
-            rust_weights.append(1.0)
-        else:
-
-            def _hof_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
-                return cls(genome=g)  # type: ignore[call-arg]
-
-            opponents.append(_hof_factory)
-            opponent_weights.append(1.0)
+        rust_opponents.append(hof_genome)
+        rust_weights.append(1.0)
 
     # In self-play mode, also play against peers from the current population.
     for peer_genome in peers:
-        g = peer_genome
-        if not neural:
-            rust_opponents.append(g)
-            rust_weights.append(1.0)
-        else:
-
-            def _peer_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
-                return cls(genome=g)  # type: ignore[call-arg]
-
-            opponents.append(_peer_factory)
-            opponent_weights.append(1.0)
+        rust_opponents.append(peer_genome)
+        rust_weights.append(1.0)
 
     # Use all map flavours plus the fixed map, with seed variation.
     def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
@@ -172,12 +153,12 @@ def _evaluate_individual(
         )
         py_weight = sum(opponent_weights)
 
-    # Fast Rust path for evolved-vs-evolved (hof + self-play).
+    # Fast Rust path for genome-vs-genome (hof + self-play).
     rust_score = 0.0
     rust_weight_total = 0.0
     if rust_opponents:
         rust_score, rust_weight_total = _evaluate_rust(
-            genome, rust_opponents, rust_weights, maps, config, games_per_eval, rng_seed
+            genome, rust_opponents, rust_weights, maps, config, games_per_eval, rng_seed, neural
         )
 
     total_weight = py_weight + rust_weight_total
@@ -194,9 +175,12 @@ def _evaluate_rust(
     config: GameConfig,
     games_per_eval: int,
     rng_seed: int,
+    neural: bool = False,
 ) -> tuple[float, float]:
-    """Evaluate genome against other evolved genomes using the fast Rust runner."""
-    from clauralux._engine import run_training_game
+    """Evaluate genome against other genomes using the fast Rust runner."""
+    from clauralux._engine import run_neural_training_game, run_training_game
+
+    run_game = run_neural_training_game if neural else run_training_game
 
     max_ticks = config.max_ticks or 10_000
     total_score = 0.0
@@ -219,7 +203,7 @@ def _evaluate_rust(
             sun_garrisons.append(float(sun.garrison))
             sun_levels.append(int(sun.level))
 
-        result = run_training_game(
+        result = run_game(
             config,
             sun_ids,
             sun_xs,

@@ -37,6 +37,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Training
     m.add_class::<training::TrainingResult>()?;
     m.add_function(wrap_pyfunction!(training::run_training_game, m)?)?;
+    m.add_function(wrap_pyfunction!(training::run_neural_training_game, m)?)?;
 
     Ok(())
 }
