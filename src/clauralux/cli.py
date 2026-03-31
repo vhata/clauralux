@@ -132,6 +132,7 @@ def _game_options(f: Callable[..., None]) -> Callable[..., None]:
 @click.option("--record", default=None, metavar="FILE", help="Record game to replay JSON file.")
 @click.option("--no-commentary", is_flag=True, help="Disable commentary overlay.")
 @click.option("--pause-on-events", is_flag=True, help="Pause on big moments with commentary.")
+@click.option("--colorblind", is_flag=True, help="Use colorblind-safe palette.")
 def watch(
     bot: tuple[str, ...],
     map_name: str,
@@ -142,12 +143,17 @@ def watch(
     record: str | None,
     no_commentary: bool,
     pause_on_events: bool,
+    colorblind: bool,
 ) -> None:
     """Watch a game with visual rendering and commentary."""
     config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
     bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
     if map_name.startswith("random:"):
         config = flavour_config(config, map_name.split(":", 1)[1])
+    if colorblind:
+        from clauralux.renderer.colors import set_colorblind_mode
+
+        set_colorblind_mode(True)
     _run_visual(
         config,
         map_name,
@@ -704,6 +710,18 @@ def _build_menu_options(saved: dict[str, str] | None = None) -> list[MenuOption]
         ),
     )
 
+    colorblind_choices = ["Off", "On"]
+    options.append(
+        MenuOption(
+            key="colorblind",
+            label="Colorblind Mode",
+            description="Use colorblind-safe palette (avoids red-green confusion).",
+            choices=colorblind_choices,
+            default_index=_saved_index(colorblind_choices, s.get("colorblind"), 0),
+            visible_when=lambda v: v["mode"] in ("watch", "campaign"),
+        ),
+    )
+
     return options
 
 
@@ -739,6 +757,11 @@ def _run_gui_menu() -> None:
     if map_name.startswith("random:"):
         flavour = map_name.split(":", 1)[1]
         config = flavour_config(config, flavour)
+
+    if result.get("colorblind") == "On":
+        from clauralux.renderer.colors import set_colorblind_mode
+
+        set_colorblind_mode(True)
 
     if mode == "campaign":
         campaign_start_str = result.get("campaign_start", "1. First Light")
