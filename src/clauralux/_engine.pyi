@@ -174,6 +174,20 @@ def run_neural_training_game(
     genome_p1: list[float],
     genome_p2: list[float],
 ) -> TrainingResult: ...
+def run_training_game_vs_bot(
+    config: GameConfig,
+    sun_ids: list[int],
+    sun_xs: list[float],
+    sun_ys: list[float],
+    sun_owners: list[int],
+    sun_garrisons: list[float],
+    sun_levels: list[int],
+    players: list[int],
+    genome_p1: list[float],
+    opponent_name: str,
+    neural: bool,
+    rng_seed: int,
+) -> TrainingResult: ...
 def run_training_game(
     config: GameConfig,
     sun_ids: list[int],

@@ -10,57 +10,57 @@ use std::collections::{HashMap, HashSet};
 // ── Internal game structures (no Py<> wrappers) ──────────────────────
 
 #[derive(Clone)]
-struct TSun {
-    id: i64,
-    x: f64,
-    y: f64,
-    owner: i64,
-    level: i64,
-    garrison: f64,
-    production_ticks: i64,
+pub struct TSun {
+    pub id: i64,
+    pub x: f64,
+    pub y: f64,
+    pub owner: i64,
+    pub level: i64,
+    pub garrison: f64,
+    pub production_ticks: i64,
 }
 
 #[derive(Clone)]
-struct TGroup {
-    owner: i64,
-    count: i64,
-    x: f64,
-    y: f64,
-    target_sun_id: i64,
-    vx: f64,
-    vy: f64,
+pub struct TGroup {
+    pub owner: i64,
+    pub count: i64,
+    pub x: f64,
+    pub y: f64,
+    pub target_sun_id: i64,
+    pub vx: f64,
+    pub vy: f64,
 }
 
 #[derive(Clone)]
-struct TConfig {
-    production_interval: i64,
-    production_per_level: i64,
-    max_sun_level: i64,
-    upgrade_costs: Vec<i64>,
-    capture_level_reset: Option<i64>,
-    unit_speed: f64,
-    attack_ratio: f64,
-    decision_interval: i64,
-    max_ticks: Option<i64>,
+pub struct TConfig {
+    pub production_interval: i64,
+    pub production_per_level: i64,
+    pub max_sun_level: i64,
+    pub upgrade_costs: Vec<i64>,
+    pub capture_level_reset: Option<i64>,
+    pub unit_speed: f64,
+    pub attack_ratio: f64,
+    pub decision_interval: i64,
+    pub max_ticks: Option<i64>,
 }
 
-struct TState {
-    suns: HashMap<i64, TSun>,
-    groups: Vec<TGroup>,
-    players: Vec<i64>,
-    tick: i64,
-    winner: Option<i64>,
-    eliminated: HashSet<i64>,
+pub struct TState {
+    pub suns: HashMap<i64, TSun>,
+    pub groups: Vec<TGroup>,
+    pub players: Vec<i64>,
+    pub tick: i64,
+    pub winner: Option<i64>,
+    pub eliminated: HashSet<i64>,
 }
 
-enum TAction {
+pub enum TAction {
     Send { source: i64, target: i64, count: i64 },
     Upgrade { sun_id: i64 },
 }
 
 // ── Distance helper ──────────────────────────────────────────────────
 
-fn dist(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
+pub fn dist(x1: f64, y1: f64, x2: f64, y2: f64) -> f64 {
     ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
 }
 
@@ -75,7 +75,7 @@ fn direction(x1: f64, y1: f64, x2: f64, y2: f64) -> (f64, f64) {
 
 // ── Game tick logic (mirrors game.rs) ────────────────────────────────
 
-fn process_actions(state: &mut TState, cfg: &TConfig, player_id: i64, actions: &[TAction]) {
+pub fn process_actions(state: &mut TState, cfg: &TConfig, player_id: i64, actions: &[TAction]) {
     for action in actions {
         match action {
             TAction::Send { source, target, count } => {
@@ -118,14 +118,14 @@ fn process_actions(state: &mut TState, cfg: &TConfig, player_id: i64, actions: &
     }
 }
 
-fn move_groups(state: &mut TState) {
+pub fn move_groups(state: &mut TState) {
     for g in &mut state.groups {
         g.x += g.vx;
         g.y += g.vy;
     }
 }
 
-fn resolve_arrivals(state: &mut TState, cfg: &TConfig) {
+pub fn resolve_arrivals(state: &mut TState, cfg: &TConfig) {
     let mut remaining = Vec::new();
     let mut arrived: Vec<(i64, i64, i64)> = Vec::new();
 
@@ -161,7 +161,7 @@ fn resolve_arrivals(state: &mut TState, cfg: &TConfig) {
     }
 }
 
-fn produce_units(state: &mut TState, cfg: &TConfig) {
+pub fn produce_units(state: &mut TState, cfg: &TConfig) {
     for sun in state.suns.values_mut() {
         if sun.owner == 0 { continue; }
         sun.production_ticks += 1;
@@ -174,7 +174,7 @@ fn produce_units(state: &mut TState, cfg: &TConfig) {
     }
 }
 
-fn check_win(state: &mut TState, cfg: &TConfig) {
+pub fn check_win(state: &mut TState, cfg: &TConfig) {
     let players = state.players.clone();
     for &pid in &players {
         if state.eliminated.contains(&pid) { continue; }
@@ -1006,6 +1006,103 @@ pub fn run_neural_training_game(
             }
             if !state.eliminated.contains(&p2) {
                 let actions = neural_decide(&state, &cfg, &genome_p2, &mut ns2, p2);
+                process_actions(&mut state, &cfg, p2, &actions);
+            }
+        }
+
+        move_groups(&mut state);
+        resolve_arrivals(&mut state, &cfg);
+        produce_units(&mut state, &cfg);
+        check_win(&mut state, &cfg);
+        state.tick += 1;
+    }
+
+    let winner = state.winner.unwrap_or(0);
+    let p1_suns = state.suns.values().filter(|s| s.owner == p1).count() as i64;
+    let total_suns = state.suns.len() as i64;
+    TrainingResult {
+        winner,
+        ticks: state.tick,
+        is_draw: winner == 0,
+        p1_suns,
+        total_suns,
+    }
+}
+
+/// Run a training game: evolved/neural bot (P1) vs a named hand-crafted bot (P2).
+#[pyfunction]
+pub fn run_training_game_vs_bot(
+    config_py: &config::GameConfig,
+    sun_ids: Vec<i64>,
+    sun_xs: Vec<f64>,
+    sun_ys: Vec<f64>,
+    sun_owners: Vec<i64>,
+    sun_garrisons: Vec<f64>,
+    sun_levels: Vec<i64>,
+    players: Vec<i64>,
+    genome_p1: Vec<f64>,
+    opponent_name: String,
+    neural: bool,
+    rng_seed: u64,
+) -> TrainingResult {
+    let cfg = TConfig {
+        production_interval: config_py.production_interval,
+        production_per_level: config_py.production_per_level,
+        max_sun_level: config_py.max_sun_level,
+        upgrade_costs: config_py.upgrade_costs.clone(),
+        capture_level_reset: config_py.capture_level_reset,
+        unit_speed: config_py.unit_speed,
+        attack_ratio: config_py.attack_ratio,
+        decision_interval: config_py.decision_interval,
+        max_ticks: config_py.max_ticks,
+    };
+
+    let mut suns = HashMap::new();
+    for i in 0..sun_ids.len() {
+        suns.insert(sun_ids[i], TSun {
+            id: sun_ids[i],
+            x: sun_xs[i],
+            y: sun_ys[i],
+            owner: sun_owners[i],
+            level: sun_levels[i],
+            garrison: sun_garrisons[i],
+            production_ticks: 0,
+        });
+    }
+
+    let mut state = TState {
+        suns,
+        groups: Vec::new(),
+        players: players.clone(),
+        tick: 0,
+        winner: None,
+        eliminated: HashSet::new(),
+    };
+
+    let p1 = players[0];
+    let p2 = players[1];
+    let mut bot_state = crate::bots::BotState::new(rng_seed);
+
+    // P1: evolved or neural
+    let params_p1 = if neural { None } else { Some(EvolvedParams::from_genome(&genome_p1)) };
+    let mut neural_state = if neural { Some(NeuralState::new()) } else { None };
+
+    while state.winner.is_none() {
+        if state.tick % cfg.decision_interval == 0 {
+            // P1: evolved or neural bot
+            if !state.eliminated.contains(&p1) {
+                let actions = if let Some(ref params) = params_p1 {
+                    evolved_decide(&state, &cfg, params, p1)
+                } else if let Some(ref mut ns) = neural_state {
+                    neural_decide(&state, &cfg, &genome_p1, ns, p1)
+                } else {
+                    vec![]
+                };
+                process_actions(&mut state, &cfg, p1, &actions);
+            }
+            // P2: hand-crafted bot
+            if !state.eliminated.contains(&p2) {
+                let actions = crate::bots::run_bot(&opponent_name, &state, &cfg, p2, &mut bot_state);
                 process_actions(&mut state, &cfg, p2, &actions);
             }
         }

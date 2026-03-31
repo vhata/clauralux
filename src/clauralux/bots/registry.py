@@ -97,3 +97,12 @@ def training_opponents_with_weights() -> list[tuple[type[Bot], float]]:
         for name, cls in BOT_REGISTRY.items()
         if name not in _TRAINING_EXCLUDED
     ]
+
+
+def training_opponent_names_with_weights() -> list[tuple[str, float]]:
+    """Return bot names and their difficulty weights for training."""
+    return [
+        (name, BOT_DIFFICULTY.get(name, 1.0))
+        for name in BOT_REGISTRY
+        if name not in _TRAINING_EXCLUDED
+    ]

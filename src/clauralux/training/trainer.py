@@ -17,21 +17,14 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 from dataclasses import dataclass
 from pathlib import Path
 
-from clauralux.bots.base import Bot
-from clauralux.bots.evolved import EvolvedBot
-from clauralux.bots.neural import NeuralBot
-from clauralux.bots.noisy import NoisyWrapper
-from clauralux.bots.registry import training_opponents_with_weights
 from clauralux.engine.config import GameConfig
 from clauralux.engine.mapgen import FLAVOURS, generate_map
 from clauralux.engine.maps import two_player_simple
 from clauralux.engine.state import GameState
-from clauralux.engine.types import PlayerId
 
 from .evolution import (
     Individual,
     create_next_generation,
-    evaluate_fitness,
 )
 from .genome import (
     PHASE_NAMES,
@@ -45,9 +38,6 @@ from .genome import (
     random_genome,
     save_genome,
 )
-
-# Opponent pool is derived from the central registry, excluding passive and evolved.
-OPPONENT_BOTS_WITH_WEIGHTS: list[tuple[type[Bot], float]] = training_opponents_with_weights()
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +68,7 @@ _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
 def _evaluate_individual(
     args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]], bool, float],
 ) -> float:
-    """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
+    """Evaluate a single individual entirely in Rust.
 
     Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes,
     self_play, peer_genomes, neural, curriculum_phase).
@@ -87,46 +77,28 @@ def _evaluate_individual(
         args
     )
 
+    from clauralux.bots.registry import training_opponent_names_with_weights
+
     config = GameConfig(max_ticks=10_000)
 
-    def bot_factory(pid: PlayerId) -> Bot:
-        if neural:
-            return NeuralBot(genome=genome)
-        return EvolvedBot(genome=genome)
-
-    def _make_opponent(cls: type[Bot], seed: int) -> Callable[[PlayerId], Bot]:
-        def factory(pid: PlayerId) -> Bot:
-            return NoisyWrapper(cls(), drop_prob=0.1, seed=seed)
-
-        return factory
-
-    opponents: list[Callable[[PlayerId], Bot]] = []
-    opponent_weights: list[float] = []
+    # Build opponent list: named bots + genome-based opponents.
+    # Named bots (hand-crafted) — filtered by curriculum.
+    named_opponents: list[tuple[str, float]] = []
+    genome_opponents: list[tuple[list[float], float]] = []
 
     if not self_play:
-        # Curriculum: phase 0.0 → only easy opponents (weight ≤ 0.8),
-        # phase 0.5 → medium too (weight ≤ 1.1), phase 1.0 → all opponents.
-        difficulty_cap = 0.8 + curriculum_phase * 0.6  # 0.8 → 1.4
-        for i, (cls, weight) in enumerate(OPPONENT_BOTS_WITH_WEIGHTS):
+        difficulty_cap = 0.8 + curriculum_phase * 0.6
+        for name, weight in training_opponent_names_with_weights():
             if weight <= difficulty_cap:
-                opponents.append(_make_opponent(cls, rng_seed + i))
-                opponent_weights.append(weight)
+                named_opponents.append((name, weight))
 
-    # Hall-of-fame and peer genomes use the fast Rust path (both evolved and neural).
-    rust_opponents: list[list[float]] = []
-    rust_weights: list[float] = []
-
-    # Play against hall-of-fame bots (previous best genomes).
+    # Hall-of-fame + peers (genome-based).
     for hof_genome in hall_of_fame:
-        rust_opponents.append(hof_genome)
-        rust_weights.append(1.0)
-
-    # In self-play mode, also play against peers from the current population.
+        genome_opponents.append((hof_genome, 1.0))
     for peer_genome in peers:
-        rust_opponents.append(peer_genome)
-        rust_weights.append(1.0)
+        genome_opponents.append((peer_genome, 1.0))
 
-    # Use all map flavours plus the fixed map, with seed variation.
+    # Build map factories.
     def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
         def factory(cfg: GameConfig) -> GameState:
             return generate_map(cfg, flavour, 2, seed=seed)
@@ -138,60 +110,60 @@ def _evaluate_individual(
         *(_make_map(f, rng_seed + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
     ]
 
-    # Evaluate with Python path for non-evolved opponents.
-    py_score = 0.0
-    py_weight = 0.0
-    if opponents:
-        py_score = evaluate_fitness(
-            bot_factory=bot_factory,
-            opponents=opponents,
-            maps=maps,
-            config=config,
-            games_per_eval=games_per_eval,
-            rng_seed=rng_seed,
-            opponent_weights=opponent_weights,
-        )
-        py_weight = sum(opponent_weights)
-
-    # Fast Rust path for genome-vs-genome (hof + self-play).
-    rust_score = 0.0
-    rust_weight_total = 0.0
-    if rust_opponents:
-        rust_score, rust_weight_total = _evaluate_rust(
-            genome, rust_opponents, rust_weights, maps, config, games_per_eval, rng_seed, neural
-        )
-
-    total_weight = py_weight + rust_weight_total
-    if total_weight <= 0:
+    all_opponents = len(named_opponents) + len(genome_opponents)
+    if all_opponents == 0:
         return 0.0
-    return (py_score * py_weight + rust_score * rust_weight_total) / total_weight
+
+    return _evaluate_all_rust(
+        genome,
+        named_opponents,
+        genome_opponents,
+        maps,
+        config,
+        games_per_eval,
+        rng_seed,
+        neural,
+    )
 
 
-def _evaluate_rust(
+def _evaluate_all_rust(
     genome: list[float],
-    opp_genomes: list[list[float]],
-    opp_weights: list[float],
+    named_opponents: list[tuple[str, float]],
+    genome_opponents: list[tuple[list[float], float]],
     maps: list[Callable[[GameConfig], GameState]],
     config: GameConfig,
     games_per_eval: int,
     rng_seed: int,
     neural: bool = False,
-) -> tuple[float, float]:
-    """Evaluate genome against other genomes using the fast Rust runner."""
-    from clauralux._engine import run_neural_training_game, run_training_game
-
-    run_game = run_neural_training_game if neural else run_training_game
+) -> float:
+    """Evaluate genome against all opponents using Rust runners."""
+    from clauralux._engine import (
+        run_neural_training_game,
+        run_training_game,
+        run_training_game_vs_bot,
+    )
 
     max_ticks = config.max_ticks or 10_000
+    run_genome_game = run_neural_training_game if neural else run_training_game
+
+    # Interleave all opponents for game assignment.
+    all_opps: list[tuple[str | None, list[float] | None, float]] = []
+    for name, weight in named_opponents:
+        all_opps.append((name, None, weight))
+    for g, weight in genome_opponents:
+        all_opps.append((None, g, weight))
+
+    if not all_opps:
+        return 0.0
+
     opp_scores: dict[int, list[float]] = {}
 
     for i in range(games_per_eval):
-        opp_idx = i % len(opp_genomes)
-        opp_genome = opp_genomes[opp_idx]
+        opp_idx = i % len(all_opps)
+        opp_name, opp_genome, weight = all_opps[opp_idx]
         map_factory = maps[i % len(maps)]
 
         state = map_factory(config)
-        # Extract sun arrays for Rust.
         sun_ids, sun_xs, sun_ys, sun_owners, sun_garrisons, sun_levels = [], [], [], [], [], []
         for sid, sun in state.suns.items():
             sun_ids.append(int(sid))
@@ -201,20 +173,39 @@ def _evaluate_rust(
             sun_garrisons.append(float(sun.garrison))
             sun_levels.append(int(sun.level))
 
-        result = run_game(
-            config,
-            sun_ids,
-            sun_xs,
-            sun_ys,
-            sun_owners,
-            sun_garrisons,
-            sun_levels,
-            [1, 2],
-            genome,
-            opp_genome,
-        )
+        if opp_name is not None:
+            # Named bot opponent.
+            result = run_training_game_vs_bot(
+                config,
+                sun_ids,
+                sun_xs,
+                sun_ys,
+                sun_owners,
+                sun_garrisons,
+                sun_levels,
+                [1, 2],
+                genome,
+                opp_name,
+                neural,
+                rng_seed + i,
+            )
+        else:
+            # Genome-based opponent.
+            assert opp_genome is not None
+            result = run_genome_game(
+                config,
+                sun_ids,
+                sun_xs,
+                sun_ys,
+                sun_owners,
+                sun_garrisons,
+                sun_levels,
+                [1, 2],
+                genome,
+                opp_genome,
+            )
 
-        # Score: mirror _score_game logic from evolution.py.
+        # Score game.
         my_id = 1
         if result.is_draw:
             base = 0.15
@@ -232,27 +223,22 @@ def _evaluate_rust(
             opp_scores[opp_idx] = []
         opp_scores[opp_idx].append(score)
 
-    if not opp_scores:
-        return 0.0, 0.0
-
-    # Weighted average.
+    # Weighted average + worst-case.
     total_score = 0.0
     total_weight = 0.0
     for opp_idx, scores in opp_scores.items():
-        w = opp_weights[opp_idx]
+        w = all_opps[opp_idx][2]
         for s in scores:
             total_score += w * s
             total_weight += w
     avg = total_score / max(total_weight, 1.0)
 
-    # Worst per-opponent average.
     worst = min(
         (sum(scores) / len(scores) for scores in opp_scores.values()),
         default=0.0,
     )
 
-    combined = 0.7 * avg + 0.3 * worst
-    return combined, total_weight
+    return 0.7 * avg + 0.3 * worst
 
 
 def train(config: TrainingConfig) -> list[float]:

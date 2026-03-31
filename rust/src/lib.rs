@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 mod actions;
+mod bots;
 mod config;
 mod game;
 mod state;
@@ -38,6 +39,7 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<training::TrainingResult>()?;
     m.add_function(wrap_pyfunction!(training::run_training_game, m)?)?;
     m.add_function(wrap_pyfunction!(training::run_neural_training_game, m)?)?;
+    m.add_function(wrap_pyfunction!(training::run_training_game_vs_bot, m)?)?;
 
     Ok(())
 }
