@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Central bot registry — new bots automatically appear in CLI, menu, and training
 - Noisy opponent wrapper for training diversity (randomly drops 10% of actions)
 
+### Improved
+- README: added standard map descriptions (simple, triangle, cross, pentagon, hex)
+- README: explained bot `_intent` property and its role in sports commentary
+- README: clarified pygame-ce as optional dependency, separated dev setup from quickstart
+
 ### Changed
 - CLI refactored from argparse to click with proper subcommands
 - Training defaults increased: population 80, generations 200, games/eval 40
