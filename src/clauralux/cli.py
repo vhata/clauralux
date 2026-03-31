@@ -1249,31 +1249,51 @@ class BenchmarkResult:
 
 
 def _run_benchmark_core(games_per_opponent: int, bot_name: str = "evolved") -> BenchmarkResult:
-    """Run a bot against all opponents, return structured results."""
+    """Run a bot against all opponents, return structured results.
+
+    Uses the fast Rust runner for evolved/neural bots.
+    """
+    from clauralux._engine import run_training_game_vs_bot
     from clauralux.bots.registry import BOT_REGISTRY
     from clauralux.engine.mapgen import generate_map
-    from clauralux.runner.tournament import run_tournament
+    from clauralux.training.genome import (
+        default_genome,
+        load_genome,
+        neural_load_genome,
+        neural_random_genome,
+    )
 
     config = GameConfig(max_ticks=10_000)
     excluded = {"passive", "evolved", "neural", "human"}
     opponents = [name for name in BOT_REGISTRY if name not in excluded]
+    is_neural = bot_name == "neural"
 
-    map_factories: list[MapFactory] = [two_player_simple]
+    # Load genome for the bot being benchmarked.
+    if is_neural:
+        from clauralux.bots.neural import DEFAULT_NEURAL_WEIGHTS_PATH
+
+        try:
+            genome = neural_load_genome(DEFAULT_NEURAL_WEIGHTS_PATH)
+        except (FileNotFoundError, ValueError):
+            genome = neural_random_genome()
+    else:
+        from clauralux.bots.evolved import DEFAULT_WEIGHTS_PATH
+
+        try:
+            genome = load_genome(DEFAULT_WEIGHTS_PATH)
+        except (FileNotFoundError, ValueError):
+            genome = default_genome()
+
+    map_factories: list[Callable[[GameConfig], GameState]] = [two_player_simple]
     for flavour in FLAVOUR_NAMES:
 
-        def _make_map_factory(f: str) -> MapFactory:
+        def _make_map_factory(f: str) -> Callable[[GameConfig], GameState]:
             def factory(cfg: GameConfig) -> GameState:
                 return generate_map(cfg, f, 2)
 
             return factory
 
         map_factories.append(_make_map_factory(flavour))
-
-    def _make_bot_factory(name: str) -> Callable[[PlayerId], Bot]:
-        def factory(_pid: PlayerId) -> Bot:
-            return make_bot(name)
-
-        return factory
 
     per_opponent: dict[str, tuple[int, int, int]] = {}
 
@@ -1283,19 +1303,44 @@ def _run_benchmark_core(games_per_opponent: int, bot_name: str = "evolved") -> B
         opp_draws = 0
 
         for map_factory in map_factories:
-            result = run_tournament(
-                config=config,
-                map_factory=map_factory,
-                bot_factories={
-                    PlayerId(1): _make_bot_factory(bot_name),
-                    PlayerId(2): _make_bot_factory(opp_name),
-                },
-                num_games=games_per_opponent,
-                rotate_positions=True,
-            )
-            opp_wins += result.wins.get(PlayerId(1), 0)
-            opp_losses += result.wins.get(PlayerId(2), 0)
-            opp_draws += result.draws
+            for game_idx in range(games_per_opponent):
+                state = map_factory(config)
+                sun_ids, sun_xs, sun_ys, sun_owners, sun_garrisons, sun_levels = (
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                )
+                for sid, sun in state.suns.items():
+                    sun_ids.append(int(sid))
+                    sun_xs.append(float(sun.position.x))
+                    sun_ys.append(float(sun.position.y))
+                    sun_owners.append(int(sun.owner))
+                    sun_garrisons.append(float(sun.garrison))
+                    sun_levels.append(int(sun.level))
+
+                result = run_training_game_vs_bot(
+                    config,
+                    sun_ids,
+                    sun_xs,
+                    sun_ys,
+                    sun_owners,
+                    sun_garrisons,
+                    sun_levels,
+                    [1, 2],
+                    genome,
+                    opp_name,
+                    is_neural,
+                    game_idx,
+                )
+                if result.is_draw:
+                    opp_draws += 1
+                elif result.winner == 1:
+                    opp_wins += 1
+                else:
+                    opp_losses += 1
 
         per_opponent[opp_name] = (opp_wins, opp_draws, opp_losses)
 
