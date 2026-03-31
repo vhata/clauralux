@@ -518,7 +518,9 @@ def _quick_benchmark(genome: list[float], neural: bool, games_per_opponent: int)
     per_opp_rates = [per_opp_wins[n] / max(per_opp_games[n], 1) * 100 for n in per_opp_wins]
     worst = min(per_opp_rates) if per_opp_rates else 0.0
 
-    return 0.5 * overall + 0.5 * worst
+    # Less aggressive worst-case weighting for the final comparison than
+    # during training — overall performance matters more for the save decision.
+    return 0.7 * overall + 0.3 * worst
 
 
 def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
