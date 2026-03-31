@@ -112,26 +112,38 @@ def _evaluate_individual(
                 opponents.append(_make_opponent(cls, rng_seed + i))
                 opponent_weights.append(weight)
 
+    # Hall-of-fame and peer genomes can use the fast Rust path for heuristic bots.
+    rust_opponents: list[list[float]] = []
+    rust_weights: list[float] = []
+
     # Play against hall-of-fame bots (previous best genomes).
     bot_cls: type[Bot] = NeuralBot if neural else EvolvedBot
     for hof_genome in hall_of_fame:
         g = hof_genome  # capture for closure
+        if not neural:
+            rust_opponents.append(g)
+            rust_weights.append(1.0)
+        else:
 
-        def _hof_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
-            return cls(genome=g)  # type: ignore[call-arg]
+            def _hof_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
+                return cls(genome=g)  # type: ignore[call-arg]
 
-        opponents.append(_hof_factory)
-        opponent_weights.append(1.0)
+            opponents.append(_hof_factory)
+            opponent_weights.append(1.0)
 
     # In self-play mode, also play against peers from the current population.
     for peer_genome in peers:
         g = peer_genome
+        if not neural:
+            rust_opponents.append(g)
+            rust_weights.append(1.0)
+        else:
 
-        def _peer_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
-            return cls(genome=g)  # type: ignore[call-arg]
+            def _peer_factory(pid: PlayerId, g: list[float] = g, cls: type[Bot] = bot_cls) -> Bot:
+                return cls(genome=g)  # type: ignore[call-arg]
 
-        opponents.append(_peer_factory)
-        opponent_weights.append(1.0)
+            opponents.append(_peer_factory)
+            opponent_weights.append(1.0)
 
     # Use all map flavours plus the fixed map, with seed variation.
     def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
@@ -145,15 +157,100 @@ def _evaluate_individual(
         *(_make_map(f, rng_seed + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
     ]
 
-    return evaluate_fitness(
-        bot_factory=bot_factory,
-        opponents=opponents,
-        maps=maps,
-        config=config,
-        games_per_eval=games_per_eval,
-        rng_seed=rng_seed,
-        opponent_weights=opponent_weights,
-    )
+    # Evaluate with Python path for non-evolved opponents.
+    py_score = 0.0
+    py_weight = 0.0
+    if opponents:
+        py_score = evaluate_fitness(
+            bot_factory=bot_factory,
+            opponents=opponents,
+            maps=maps,
+            config=config,
+            games_per_eval=games_per_eval,
+            rng_seed=rng_seed,
+            opponent_weights=opponent_weights,
+        )
+        py_weight = sum(opponent_weights)
+
+    # Fast Rust path for evolved-vs-evolved (hof + self-play).
+    rust_score = 0.0
+    rust_weight_total = 0.0
+    if rust_opponents:
+        rust_score, rust_weight_total = _evaluate_rust(
+            genome, rust_opponents, rust_weights, maps, config, games_per_eval, rng_seed
+        )
+
+    total_weight = py_weight + rust_weight_total
+    if total_weight <= 0:
+        return 0.0
+    return (py_score * py_weight + rust_score * rust_weight_total) / total_weight
+
+
+def _evaluate_rust(
+    genome: list[float],
+    opp_genomes: list[list[float]],
+    opp_weights: list[float],
+    maps: list[Callable[[GameConfig], GameState]],
+    config: GameConfig,
+    games_per_eval: int,
+    rng_seed: int,
+) -> tuple[float, float]:
+    """Evaluate genome against other evolved genomes using the fast Rust runner."""
+    from clauralux._engine import run_training_game
+
+    max_ticks = config.max_ticks or 10_000
+    total_score = 0.0
+    total_weight = 0.0
+
+    for i in range(games_per_eval):
+        opp_idx = i % len(opp_genomes)
+        opp_genome = opp_genomes[opp_idx]
+        weight = opp_weights[opp_idx]
+        map_factory = maps[i % len(maps)]
+
+        state = map_factory(config)
+        # Extract sun arrays for Rust.
+        sun_ids, sun_xs, sun_ys, sun_owners, sun_garrisons, sun_levels = [], [], [], [], [], []
+        for sid, sun in state.suns.items():
+            sun_ids.append(int(sid))
+            sun_xs.append(float(sun.position.x))
+            sun_ys.append(float(sun.position.y))
+            sun_owners.append(int(sun.owner))
+            sun_garrisons.append(float(sun.garrison))
+            sun_levels.append(int(sun.level))
+
+        result = run_training_game(
+            config,
+            sun_ids,
+            sun_xs,
+            sun_ys,
+            sun_owners,
+            sun_garrisons,
+            sun_levels,
+            [1, 2],
+            genome,
+            opp_genome,
+        )
+
+        # Score: mirror _score_game logic from evolution.py.
+        my_id = 1
+        if result.is_draw:
+            base = 0.15
+            speed_bonus = 0.0
+        elif result.winner == my_id:
+            base = 1.0
+            speed_bonus = max(0.0, 0.2 * (1.0 - result.ticks / max_ticks))
+        else:
+            base = 0.0
+            speed_bonus = 0.0
+
+        territory_bonus = 0.1 * (result.p1_suns / max(result.total_suns, 1))
+        total_score += weight * (base + speed_bonus + territory_bonus)
+        total_weight += weight
+
+    if total_weight <= 0:
+        return 0.0, 0.0
+    return total_score / total_weight, total_weight
 
 
 def train(config: TrainingConfig) -> list[float]:

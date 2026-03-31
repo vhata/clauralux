@@ -159,6 +159,8 @@ class TrainingResult:
     winner: int
     ticks: int
     is_draw: bool
+    p1_suns: int
+    total_suns: int
 
 def run_training_game(
     config: GameConfig,

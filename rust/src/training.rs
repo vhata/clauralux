@@ -572,6 +572,10 @@ pub struct TrainingResult {
     pub ticks: i64,
     #[pyo3(get)]
     pub is_draw: bool,
+    #[pyo3(get)]
+    pub p1_suns: i64,
+    #[pyo3(get)]
+    pub total_suns: i64,
 }
 
 /// Run a complete training game in pure Rust.
@@ -654,10 +658,14 @@ pub fn run_training_game(
     }
 
     let winner = state.winner.unwrap_or(0);
+    let p1_suns = state.suns.values().filter(|s| s.owner == p1).count() as i64;
+    let total_suns = state.suns.len() as i64;
     TrainingResult {
         winner,
         ticks: state.tick,
         is_draw: winner == 0,
+        p1_suns,
+        total_suns,
     }
 }
 
