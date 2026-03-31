@@ -4,6 +4,7 @@ mod actions;
 mod config;
 mod game;
 mod state;
+mod training;
 mod types;
 mod view;
 
@@ -32,6 +33,10 @@ fn _engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Game
     m.add_class::<game::Game>()?;
+
+    // Training
+    m.add_class::<training::TrainingResult>()?;
+    m.add_function(wrap_pyfunction!(training::run_training_game, m)?)?;
 
     Ok(())
 }
