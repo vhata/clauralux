@@ -361,6 +361,11 @@ def train(config: TrainingConfig) -> list[float]:
                 # Only save if we actually beat whatever was on disk.
                 if prior_best is None or best_ever.fitness > prior_best.fitness:
                     _save_weights(best_ever.genome, output_path)
+                    # Keep a timestamped backup so good weights are never lost.
+                    backup = output_path.with_suffix(
+                        f".backup-{time.strftime('%Y%m%d-%H%M%S')}.json"
+                    )
+                    _save_weights(best_ever.genome, backup)
             else:
                 stagnation_count += 1
 
