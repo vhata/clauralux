@@ -5,6 +5,10 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from clauralux.runner.tournament import TournamentResult
 
 import click
 
@@ -303,6 +307,9 @@ def headless(
 @main.command()
 @_game_options
 @click.option("--games", type=int, default=100, help="Number of games.")
+@click.option(
+    "--output", "-o", "output_path", default=None, help="Save results to file (.json or .csv)."
+)
 def tournament(
     bot: tuple[str, ...],
     map_name: str,
@@ -311,13 +318,14 @@ def tournament(
     max_ticks: int,
     speed: float,
     games: int,
+    output_path: str | None,
 ) -> None:
     """Run a tournament of multiple games and compare win rates."""
     config = GameConfig(max_ticks=max_ticks, unit_speed=speed)
     bot_names = _resolve_bots_and_map(list(bot), map_name, players, config)
     if map_name.startswith("random:"):
         config = flavour_config(config, map_name.split(":", 1)[1])
-    _run_tournament(config, map_name, bot_names, games, seed)
+    _run_tournament(config, map_name, bot_names, games, seed, output_path)
 
 
 @main.command()
@@ -401,12 +409,17 @@ def megatrain(workers: int, output: str, from_scratch: bool, neural: bool) -> No
 @main.command()
 @click.option("--benchmark-games", type=int, default=50, help="Games per opponent per map.")
 @click.option("--neural", is_flag=True, help="Benchmark the neural bot instead of evolved.")
-def benchmark(benchmark_games: int, neural: bool) -> None:
+@click.option(
+    "--output", "-o", "output_path", default=None, help="Save results to file (.json or .csv)."
+)
+def benchmark(benchmark_games: int, neural: bool, output_path: str | None) -> None:
     """Benchmark the evolved bot against all opponents."""
     bot_name = "neural" if neural else "evolved"
     result = _run_benchmark_core(benchmark_games, bot_name=bot_name)
     label = "Neural Bot Benchmark" if neural else "Evolved Bot Benchmark"
     _print_benchmark(label, result)
+    if output_path:
+        _save_benchmark_results(output_path, result)
 
 
 @main.command()
@@ -842,6 +855,7 @@ def _run_tournament(
     bot_names: list[str],
     num_games: int,
     seed: int | None,
+    output_path: str | None = None,
 ) -> None:
     from clauralux.runner.tournament import run_tournament
 
@@ -870,6 +884,89 @@ def _run_tournament(
         click.echo(f"  P{pid} ({name}): {wins} wins ({rate:.1%})")
     click.echo(f"  Draws: {result.draws}")
     click.echo(f"  Avg ticks: {result.avg_ticks:.0f}")
+
+    if output_path:
+        _save_tournament_results(output_path, bot_names, result)
+
+
+def _save_tournament_results(
+    path: str,
+    bot_names: list[str],
+    result: TournamentResult,
+) -> None:
+    """Save tournament results to JSON or CSV file."""
+
+    rows = []
+    for i, name in enumerate(bot_names):
+        pid = PlayerId(i + 1)
+        rows.append(
+            {
+                "bot": name,
+                "wins": result.wins.get(pid, 0),
+                "win_rate": round(result.win_rate(pid), 4),
+            }
+        )
+
+    if path.endswith(".json"):
+        import json
+
+        data = {
+            "total_games": result.total_games,
+            "draws": result.draws,
+            "avg_ticks": round(result.avg_ticks, 1),
+            "bots": rows,
+        }
+        Path(path).write_text(json.dumps(data, indent=2) + "\n")
+    elif path.endswith(".csv"):
+        import csv
+
+        with Path(path).open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["bot", "wins", "win_rate"])
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        click.echo(f"Warning: unknown output format for {path} (use .json or .csv)")
+        return
+
+    click.echo(f"Results saved to {path}")
+
+
+def _save_benchmark_results(path: str, result: BenchmarkResult) -> None:
+    """Save benchmark results to JSON or CSV file."""
+    rows = []
+    for name in sorted(result.per_opponent):
+        w, d, ls = result.per_opponent[name]
+        rows.append(
+            {
+                "opponent": name,
+                "wins": w,
+                "draws": d,
+                "losses": ls,
+                "win_pct": round(result.win_pct(name), 1),
+            }
+        )
+
+    if path.endswith(".json"):
+        data = {
+            "total_games": result.total_games,
+            "overall_win_pct": round(result.overall_win_pct, 1),
+            "opponents": rows,
+        }
+        Path(path).write_text(json.dumps(data, indent=2) + "\n")
+    elif path.endswith(".csv"):
+        import csv
+
+        with Path(path).open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=["opponent", "wins", "draws", "losses", "win_pct"]
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        click.echo(f"Warning: unknown output format for {path} (use .json or .csv)")
+        return
+
+    click.echo(f"Results saved to {path}")
 
 
 def _run_campaign(
