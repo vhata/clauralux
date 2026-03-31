@@ -8,10 +8,9 @@ Training speed improvements, ordered by expected impact.
 - [x] **Rust evolved bot heuristic** — `run_training_game()` runs evolved-vs-evolved with zero Python round-trips (16x faster, 0.45ms/game)
 - [x] **NumPy vectorized MLP forward pass** — neural bot uses NumPy instead of scalar Python math
 - [x] **Parity tests** — catch drift between Python and Rust evolved bot implementations
+- [x] **Rust MLP forward pass for neural training** — `run_neural_training_game()` with feature extraction, recurrent MLP, and output decoding all in Rust (25x faster, 18.5ms/game)
 
 ## High Impact
-
-- [ ] **Rust MLP forward pass for neural training** — port the 20-line matrix multiply to Rust, add `run_neural_training_game()`. The evolved handlers are already in Rust; just need the feature extraction and MLP. Would give neural training the same 16x speedup.
 - [ ] **Port opponent bots to Rust** — the 12 hand-crafted bots are simple heuristics (50-100 lines each). Porting them would let ALL training games use the Rust path, not just evolved-vs-evolved. Currently most training time is still spent on Python opponents.
 - [ ] **Parallel game evaluation within workers** — each ProcessPoolExecutor worker plays games sequentially. Could use Rust-level threading (rayon) to run multiple games per worker since pure-Rust games don't need the GIL.
 
