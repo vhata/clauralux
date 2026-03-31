@@ -20,7 +20,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
 - **16 built-in bots** including a human player (each with strategic intent narration)
 - **Evolutionary training** — train evolved or neural bots against all other bots, with difficulty-weighted opponents and stagnation resets
-- **Neural net bot** — recurrent MLP reads 20 game-state features + hidden state memory, outputs 29 decision parameters + action priorities each tick, adapting strategy with memory of past game states
+- **Neural net bot** — recurrent MLP reads 20 game-state features + hidden memory, outputs 29 decision parameters + action priorities each tick, adapting strategy with memory of past game states
 - **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
 - **Benchmark** — scorecard showing evolved or neural bot's win rate against every opponent across all maps
 - **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
@@ -269,7 +269,7 @@ src/clauralux/
     replay/             # Game recording and playback
     cli.py              # CLI + GUI entry point
 rust/                   # Rust game engine (compiled via PyO3/maturin)
-tests/                  # 131 tests
+tests/                  # 151 tests
 ```
 
 ## Development
