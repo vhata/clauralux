@@ -176,6 +176,9 @@ def save_genome(genome: list[float], path: str | Path) -> None:
     """Save a genome to a JSON file in phase-based format."""
     phases, transitions = genome_to_phase_dicts(genome)
     data: dict[str, object] = {
+        "genome_version": NUM_PARAMS,
+        "num_phases": NUM_PHASES,
+        "params_per_phase": NUM_PHASE_PARAMS,
         "phases": phases,
     }
     for i, spec in enumerate(TRANSITION_SPECS):
@@ -186,13 +189,23 @@ def save_genome(genome: list[float], path: str | Path) -> None:
 def load_genome(path: str | Path) -> list[float]:
     """Load a genome from a JSON file.
 
-    Supports both the new phase-based format (with "phases" key) and the
-    old single-dict format (backwards compatible — loads as 3 identical phases).
+    Validates that the genome version (size) matches the current architecture.
+    Raises ValueError if the saved genome is incompatible.
     """
     raw = json.loads(Path(path).read_text())
 
     if "phases" in raw:
-        # New format: {"phases": [...], "transition_1": ..., "transition_2": ...}
+        # Check version if present.
+        saved_version = raw.get("genome_version")
+        if saved_version is not None and saved_version != NUM_PARAMS:
+            msg = (
+                f"Incompatible evolved genome in {path}: "
+                f"saved version has {saved_version} params, "
+                f"current architecture expects {NUM_PARAMS}. "
+                f"Retrain with --from-scratch."
+            )
+            raise ValueError(msg)
+
         genome: list[float] = []
         for phase_dict in raw["phases"]:
             for spec in PARAM_SPECS:
@@ -260,14 +273,36 @@ def neural_random_genome(rng: random.Random | None = None) -> list[float]:
 
 def neural_save_genome(genome: list[float], path: str | Path) -> None:
     """Save a neural genome to a JSON file."""
-    data = {"type": "neural", "weights": genome}
+    data = {
+        "type": "neural",
+        "genome_version": NEURAL_NUM_PARAMS,
+        "num_features": NEURAL_NUM_FEATURES,
+        "num_hidden": NEURAL_HIDDEN,
+        "num_outputs": NEURAL_NUM_OUTPUTS,
+        "weights": genome,
+    }
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
 
 def neural_load_genome(path: str | Path) -> list[float]:
-    """Load a neural genome from a JSON file."""
+    """Load a neural genome from a JSON file.
+
+    Validates that the genome version matches the current architecture.
+    Raises ValueError if the saved genome is incompatible.
+    """
     raw = json.loads(Path(path).read_text())
-    if raw.get("type") == "neural":
-        return raw["weights"]  # type: ignore[no-any-return]
-    msg = f"Not a neural genome file: {path}"
-    raise ValueError(msg)
+    if raw.get("type") != "neural":
+        msg = f"Not a neural genome file: {path}"
+        raise ValueError(msg)
+
+    saved_version = raw.get("genome_version")
+    if saved_version is not None and saved_version != NEURAL_NUM_PARAMS:
+        msg = (
+            f"Incompatible neural genome in {path}: "
+            f"saved version has {saved_version} weights, "
+            f"current architecture expects {NEURAL_NUM_PARAMS}. "
+            f"Retrain with --from-scratch."
+        )
+        raise ValueError(msg)
+
+    return raw["weights"]  # type: ignore[no-any-return]
