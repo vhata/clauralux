@@ -1,8 +1,10 @@
-"""Neural network bot — an MLP reads game state and outputs decision parameters.
+"""Neural network bot — a recurrent MLP reads game state and outputs decision parameters.
 
-The network takes 12 game-state features as input and produces 29 outputs:
-25 heuristic parameters (same as EvolvedBot) + 4 priority weights that
-control the order of defend/reinforce/upgrade/attack decisions.
+The network takes 12 game-state features + 32 recurrent hidden-state values as
+input and produces 29 outputs: 25 heuristic parameters (same as EvolvedBot) +
+4 priority weights that control the order of defend/reinforce/upgrade/attack
+decisions. The hidden state carries forward between ticks, giving the network
+memory of past game states.
 
 All decision logic (target scoring, dispatch, threats, upgrades) is inherited
 from EvolvedBot. The neural net just decides *how* to tune that logic each tick.
@@ -19,7 +21,7 @@ from clauralux.engine.actions import Action
 from clauralux.engine.view import GameView
 from clauralux.training.genome import (
     NEURAL_HIDDEN,
-    NEURAL_NUM_FEATURES,
+    NEURAL_INPUT_SIZE,
     NEURAL_NUM_OUTPUTS,
     NEURAL_NUM_PARAMS,
     PARAM_SPECS,
@@ -109,22 +111,33 @@ def _tanh(x: float) -> float:
 def mlp_forward(
     features: list[float],
     weights: list[float],
-    num_features: int = NEURAL_NUM_FEATURES,
+    prev_hidden: np.ndarray | None = None,
+    num_input: int = NEURAL_INPUT_SIZE,
     num_hidden: int = NEURAL_HIDDEN,
     num_outputs: int = NEURAL_NUM_OUTPUTS,
-) -> list[float]:
-    """NumPy-accelerated MLP forward pass: input → hidden (tanh) → output (sigmoid).
+) -> tuple[list[float], np.ndarray]:
+    """NumPy-accelerated recurrent MLP forward pass.
+
+    Input is features concatenated with previous hidden state.
+    Returns (outputs, new_hidden_state).
 
     Weight layout in the flat list:
-      [W_ih (features*hidden), b_h (hidden), W_ho (hidden*outputs), b_o (outputs)]
+      [W_ih (input*hidden), b_h (hidden), W_ho (hidden*outputs), b_o (outputs)]
     """
     w = np.array(weights)
-    x = np.array(features)
+    x_features = np.array(features)
+
+    if prev_hidden is None:
+        prev_hidden = np.zeros(num_hidden)
+
+    # Concatenate features with previous hidden state.
+    x = np.concatenate([x_features, prev_hidden])
+
     idx = 0
 
-    # Input → Hidden: W_ih is (num_hidden, num_features), stored row-major.
-    w_ih = w[idx : idx + num_features * num_hidden].reshape(num_hidden, num_features)
-    idx += num_features * num_hidden
+    # Input → Hidden: W_ih is (num_hidden, num_input), stored row-major.
+    w_ih = w[idx : idx + num_input * num_hidden].reshape(num_hidden, num_input)
+    idx += num_input * num_hidden
 
     b_h = w[idx : idx + num_hidden]
     idx += num_hidden
@@ -143,7 +156,7 @@ def mlp_forward(
     output = 1.0 / (1.0 + np.exp(-z))
 
     result: list[float] = output.tolist()
-    return result
+    return result, hidden
 
 
 def decode_outputs(
@@ -203,10 +216,16 @@ class NeuralBot(EvolvedBot):
         self._phases = [dict(self._p)]
         self._transitions = [500.0, 3000.0]
 
+        # Recurrent hidden state — carried forward between ticks.
+        self._hidden: np.ndarray | None = None
+
+    def on_game_start(self, view: GameView) -> None:
+        self._hidden = None
+
     def decide(self, view: GameView) -> list[Action]:
-        # Extract features and run forward pass.
+        # Extract features and run forward pass with recurrent state.
         features = extract_features(view)
-        raw = mlp_forward(features, self._weights)
+        raw, self._hidden = mlp_forward(features, self._weights, self._hidden)
         params, priority = decode_outputs(raw)
 
         # Set active parameters.

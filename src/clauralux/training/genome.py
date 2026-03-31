@@ -213,9 +213,12 @@ NEURAL_NUM_FEATURES: int = 12
 NEURAL_HIDDEN: int = 32
 NEURAL_NUM_OUTPUTS: int = NUM_PHASE_PARAMS + 4  # 25 params + 4 priority weights
 
+# Recurrent: previous hidden state feeds back as extra input.
+NEURAL_INPUT_SIZE: int = NEURAL_NUM_FEATURES + NEURAL_HIDDEN  # 12 features + 32 hidden
+
 # Weight layout: W_ih + b_h + W_ho + b_o
 NEURAL_NUM_PARAMS: int = (
-    NEURAL_NUM_FEATURES * NEURAL_HIDDEN  # input→hidden weights
+    NEURAL_INPUT_SIZE * NEURAL_HIDDEN  # input→hidden weights (features + prev hidden)
     + NEURAL_HIDDEN  # hidden biases
     + NEURAL_HIDDEN * NEURAL_NUM_OUTPUTS  # hidden→output weights
     + NEURAL_NUM_OUTPUTS  # output biases
@@ -236,9 +239,9 @@ def neural_random_genome(rng: random.Random | None = None) -> list[float]:
     r = rng or random.Random()
     genome: list[float] = []
 
-    # Input→Hidden weights: Xavier with fan_in=12, fan_out=32.
-    limit_ih = math.sqrt(6.0 / (NEURAL_NUM_FEATURES + NEURAL_HIDDEN))
-    for _ in range(NEURAL_NUM_FEATURES * NEURAL_HIDDEN):
+    # Input→Hidden weights: Xavier with fan_in=44 (12 features + 32 hidden), fan_out=32.
+    limit_ih = math.sqrt(6.0 / (NEURAL_INPUT_SIZE + NEURAL_HIDDEN))
+    for _ in range(NEURAL_INPUT_SIZE * NEURAL_HIDDEN):
         genome.append(r.uniform(-limit_ih, limit_ih))
 
     # Hidden biases: zero-initialized.
