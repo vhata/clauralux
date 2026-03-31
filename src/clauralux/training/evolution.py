@@ -70,27 +70,28 @@ def evaluate_fitness(
     games_per_eval: int,
     rng_seed: int | None = None,
     opponent_weights: Sequence[float] | None = None,
+    worst_case_weight: float = 0.3,
 ) -> float:
     """Evaluate a bot's fitness by playing games against various opponents.
 
     Returns a score where higher is better. Uses a richer signal than plain
     win/loss: rewards decisive victories and territorial control.
 
-    If opponent_weights is provided, each opponent's game score is multiplied
-    by its weight, producing a weighted average that rewards beating harder bots.
+    Fitness = (1 - worst_case_weight) * weighted_avg + worst_case_weight * worst_opponent.
+    This prevents the optimizer from sacrificing any single matchup.
     """
     if not opponents or not maps:
         return 0.0
 
     weights = opponent_weights or [1.0] * len(opponents)
     max_ticks = config.max_ticks or 10_000
-    total_score = 0.0
-    total_weight = 0.0
+
+    # Track per-opponent scores for worst-case calculation.
+    opp_scores: dict[int, list[float]] = {}
 
     for i in range(games_per_eval):
         opponent_idx = i % len(opponents)
         opponent = opponents[opponent_idx]
-        weight = weights[opponent_idx]
         map_factory = maps[i % len(maps)]
 
         state = map_factory(config)
@@ -102,10 +103,28 @@ def evaluate_fitness(
         runner = HeadlessRunner(config, state, bots)
         result = runner.run()
 
-        total_score += weight * _score_game(result, runner.game.state, my_id, max_ticks)
-        total_weight += weight
+        score = _score_game(result, runner.game.state, my_id, max_ticks)
+        if opponent_idx not in opp_scores:
+            opp_scores[opponent_idx] = []
+        opp_scores[opponent_idx].append(score)
 
-    return total_score / max(total_weight, 1.0)
+    # Weighted average across all games.
+    total_score = 0.0
+    total_weight = 0.0
+    for opp_idx, scores in opp_scores.items():
+        w = weights[opp_idx]
+        for s in scores:
+            total_score += w * s
+            total_weight += w
+    avg = total_score / max(total_weight, 1.0)
+
+    # Worst per-opponent average (unweighted — we care about the weakest matchup).
+    worst = min(
+        (sum(scores) / len(scores) for scores in opp_scores.values()),
+        default=0.0,
+    )
+
+    return (1.0 - worst_case_weight) * avg + worst_case_weight * worst
 
 
 def tournament_select(

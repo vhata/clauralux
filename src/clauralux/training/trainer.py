@@ -183,13 +183,11 @@ def _evaluate_rust(
     run_game = run_neural_training_game if neural else run_training_game
 
     max_ticks = config.max_ticks or 10_000
-    total_score = 0.0
-    total_weight = 0.0
+    opp_scores: dict[int, list[float]] = {}
 
     for i in range(games_per_eval):
         opp_idx = i % len(opp_genomes)
         opp_genome = opp_genomes[opp_idx]
-        weight = opp_weights[opp_idx]
         map_factory = maps[i % len(maps)]
 
         state = map_factory(config)
@@ -229,12 +227,32 @@ def _evaluate_rust(
             speed_bonus = 0.0
 
         territory_bonus = 0.1 * (result.p1_suns / max(result.total_suns, 1))
-        total_score += weight * (base + speed_bonus + territory_bonus)
-        total_weight += weight
+        score = base + speed_bonus + territory_bonus
+        if opp_idx not in opp_scores:
+            opp_scores[opp_idx] = []
+        opp_scores[opp_idx].append(score)
 
-    if total_weight <= 0:
+    if not opp_scores:
         return 0.0, 0.0
-    return total_score / total_weight, total_weight
+
+    # Weighted average.
+    total_score = 0.0
+    total_weight = 0.0
+    for opp_idx, scores in opp_scores.items():
+        w = opp_weights[opp_idx]
+        for s in scores:
+            total_score += w * s
+            total_weight += w
+    avg = total_score / max(total_weight, 1.0)
+
+    # Worst per-opponent average.
+    worst = min(
+        (sum(scores) / len(scores) for scores in opp_scores.values()),
+        default=0.0,
+    )
+
+    combined = 0.7 * avg + 0.3 * worst
+    return combined, total_weight
 
 
 def train(config: TrainingConfig) -> list[float]:
