@@ -73,6 +73,10 @@ class MenuScreen:
         self._font_large = pygame.font.SysFont("monospace", 28, bold=True)
         self._font_small = pygame.font.SysFont("monospace", 13)
 
+        # Layout info for mouse interaction (populated by _draw).
+        self._row_rects: list[tuple[int, pygame.Rect]] = []
+        self._value_x = 350  # x where value column starts
+
     def _current_values(self) -> dict[str, str]:
         return {opt.key: opt.value for opt in self._options}
 
@@ -93,6 +97,11 @@ class MenuScreen:
                     return None
                 if event.type == pygame.KEYDOWN:
                     result = self._handle_key(event.key)
+                    if result is not None:
+                        pygame.quit()
+                        return result
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    result = self._handle_mouse(event)
                     if result is not None:
                         pygame.quit()
                         return result
@@ -122,6 +131,38 @@ class MenuScreen:
             return self._current_values()
         return None
 
+    def _handle_mouse(self, event: pygame.event.Event) -> dict[str, str] | None:
+        """Handle mouse clicks. Returns values dict on double-click, else None."""
+        visible = self._visible_options()
+        if not visible:
+            return None
+
+        # Scroll wheel.
+        if event.button == 4:  # scroll up
+            self._selected = max(0, self._selected - 1)
+            return None
+        elif event.button == 5:  # scroll down
+            self._selected = min(len(visible) - 1, self._selected + 1)
+            return None
+
+        if event.button != 1:
+            return None
+
+        mx, my = event.pos
+        for vis_idx, rect in self._row_rects:
+            if rect.collidepoint(mx, my):
+                if vis_idx == self._selected:
+                    # Click on already-selected row: cycle value.
+                    if mx >= self._value_x:
+                        visible[vis_idx].next()
+                    else:
+                        visible[vis_idx].prev()
+                else:
+                    self._selected = vis_idx
+                return None
+
+        return None
+
     def _draw(self) -> None:
         self._screen.fill(BACKGROUND)
         visible = self._visible_options()
@@ -133,7 +174,7 @@ class MenuScreen:
         self._screen.blit(title_surface, title_rect)
 
         # Subtitle.
-        sub = "UP/DOWN navigate, LEFT/RIGHT change, ENTER start"
+        sub = "Navigate: UP/DOWN or click | Change: LEFT/RIGHT or click | ENTER to start"
         sub_surface = self._font_small.render(sub, True, TEXT_DIM)
         sub_rect = sub_surface.get_rect(center=(self._width // 2, 72))
         self._screen.blit(sub_surface, sub_rect)
@@ -153,6 +194,7 @@ class MenuScreen:
             scroll = max(0, min(scroll, len(visible) - max_visible_rows))
 
         # Options.
+        self._row_rects = []
         y = options_top
         for i in range(scroll, min(scroll + max_visible_rows, len(visible))):
             opt = visible[i]
@@ -187,6 +229,8 @@ class MenuScreen:
                 )
                 pygame.draw.circle(self._screen, indicator_color, (40, y + 8), 5)
 
+            # Store (visible_index, rect) for mouse hit testing.
+            self._row_rects.append((i, pygame.Rect(30, y, self._width - 60, row_height)))
             y += row_height
 
         # Scroll indicators.
