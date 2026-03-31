@@ -207,6 +207,7 @@ Training automatically runs a before/after benchmark and shows a comparison tabl
 - **Right-click** — deselect
 - **Space / Enter** — pause/unpause
 - **Up/Down arrows** — speed up/slow down (2x increments)
+- **. (period)** — step one tick forward (auto-pauses)
 - **Q/Escape** — quit
 
 ## Writing a Bot

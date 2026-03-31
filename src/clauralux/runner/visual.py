@@ -42,6 +42,7 @@ class VisualRunner:
         self._renderer = PygameRenderer(config, title=title)
         self._paused = False
         self._speed_multiplier = 1
+        self._step_one = False
 
         # Detect human player for mouse input routing.
         self._human_bot: HumanBot | None = None
@@ -89,7 +90,18 @@ class VisualRunner:
                 break
 
             # Advance simulation if not paused and game not over.
-            if not self._paused and not game.is_over:
+            if self._step_one and not game.is_over:
+                self._step_one = False
+                self._base._run_decision_tick()
+                game.tick()
+                intents = {
+                    pid: bot.intent
+                    for pid, bot in self._bots.items()
+                    if pid not in game.state.eliminated
+                }
+                self._commentary.update(game.state, intents)
+
+            elif not self._paused and not game.is_over:
                 for _ in range(self._speed_multiplier):
                     if game.is_over:
                         break
@@ -140,6 +152,10 @@ class VisualRunner:
             self._speed_multiplier = min(self._speed_multiplier * 2, max_speed)
         elif key == pygame.K_DOWN:
             self._speed_multiplier = max(self._speed_multiplier // 2, 1)
+        elif key == pygame.K_PERIOD:
+            # Step one tick forward (auto-pauses).
+            self._paused = True
+            self._step_one = True
         return True
 
     def _handle_mouse(self, event: pygame.event.Event) -> None:
