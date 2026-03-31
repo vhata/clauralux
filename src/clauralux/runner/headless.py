@@ -7,7 +7,7 @@ from clauralux.bots.base import Bot
 from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
 from clauralux.engine.state import GameState
-from clauralux.engine.types import NEUTRAL, PlayerId
+from clauralux.engine.types import PlayerId
 from clauralux.replay.recorder import GameRecorder
 
 
@@ -31,44 +31,21 @@ class HeadlessRunner:
         bots: Mapping[PlayerId, Bot],
         recorder: GameRecorder | None = None,
     ) -> None:
-        self._config = config
-        self._game = Game(config, initial_state)
-        self._bots = bots
-        self._recorder = recorder
+        from clauralux.runner.base import BaseRunner
+
+        self._base = BaseRunner(config, initial_state, bots, recorder)
 
     @property
     def game(self) -> Game:
-        return self._game
+        return self._base.game
 
     def run(self) -> GameResult:
         """Run the game to completion and return the result."""
-        game = self._game
-        cfg = self._config
+        self._base._notify_start()
 
-        # Notify bots of game start.
-        for player_id, bot in self._bots.items():
-            bot.on_game_start(game.get_view(player_id))
+        while not self._base.game.is_over:
+            self._base._run_decision_tick()
+            self._base.game.tick()
 
-        while not game.is_over:
-            # Poll bots on decision ticks.
-            if game.state.tick % cfg.decision_interval == 0:
-                for player_id, bot in self._bots.items():
-                    if player_id not in game.state.eliminated:
-                        view = game.get_view(player_id)
-                        actions = bot.decide(view)
-                        if self._recorder is not None:
-                            self._recorder.record_actions(game.state.tick, player_id, actions)
-                        game.apply_actions(player_id, actions)
-            game.tick()
-
-        # Notify bots of game end.
-        for player_id, bot in self._bots.items():
-            bot.on_game_end(game.get_view(player_id))
-
-        winner = game.state.winner
-        return GameResult(
-            winner=winner,
-            ticks=game.state.tick,
-            eliminated=frozenset(game.state.eliminated),
-            is_draw=winner == NEUTRAL,
-        )
+        self._base._notify_end()
+        return self._base._build_result()

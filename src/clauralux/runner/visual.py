@@ -9,10 +9,11 @@ from clauralux.bots.human import HumanBot
 from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
 from clauralux.engine.state import GameState
-from clauralux.engine.types import NEUTRAL, PlayerId, SunId
+from clauralux.engine.types import PlayerId, SunId
 from clauralux.renderer.commentary import CommentarySystem
 from clauralux.renderer.renderer import PygameRenderer
 from clauralux.replay.recorder import GameRecorder
+from clauralux.runner.base import BaseRunner
 from clauralux.runner.headless import GameResult
 
 
@@ -29,11 +30,9 @@ class VisualRunner:
         commentary_enabled: bool = True,
         pause_on_events: bool = False,
     ) -> None:
-        self._config = config
-        self._game = Game(config, initial_state)
+        self._base = BaseRunner(config, initial_state, bots, recorder)
         self._bots = bots
         self._bot_names: dict[PlayerId, str] = dict(bot_names) if bot_names else {}
-        self._recorder = recorder
         # Build descriptive window title.
         if bot_names:
             names = " vs ".join(bot_names.values())
@@ -66,17 +65,14 @@ class VisualRunner:
 
     @property
     def game(self) -> Game:
-        return self._game
+        return self._base.game
 
     def run(self) -> GameResult:
         """Run the game with visual display. Returns result when done."""
-        game = self._game
-        cfg = self._config
+        game = self._base.game
         renderer = self._renderer
 
-        # Notify bots of game start.
-        for player_id, bot in self._bots.items():
-            bot.on_game_start(game.get_view(player_id))
+        self._base._notify_start()
 
         running = True
         while running:
@@ -97,16 +93,7 @@ class VisualRunner:
                 for _ in range(self._speed_multiplier):
                     if game.is_over:
                         break
-                    if game.state.tick % cfg.decision_interval == 0:
-                        for player_id, bot in self._bots.items():
-                            if player_id not in game.state.eliminated:
-                                view = game.get_view(player_id)
-                                actions = bot.decide(view)
-                                if self._recorder is not None:
-                                    self._recorder.record_actions(
-                                        game.state.tick, player_id, actions
-                                    )
-                                game.apply_actions(player_id, actions)
+                    self._base._run_decision_tick()
                     game.tick()
 
                     # Update commentary after each tick.
@@ -136,19 +123,9 @@ class VisualRunner:
             )
             renderer.tick()
 
-        # Notify bots of game end.
-        for player_id, bot in self._bots.items():
-            bot.on_game_end(game.get_view(player_id))
-
+        self._base._notify_end()
         renderer.close()
-
-        winner = game.state.winner
-        return GameResult(
-            winner=winner,
-            ticks=game.state.tick,
-            eliminated=frozenset(game.state.eliminated),
-            is_draw=winner == NEUTRAL,
-        )
+        return self._base._build_result()
 
     def _handle_key(self, key: int) -> bool:
         """Handle a key press. Returns False if we should quit."""
@@ -169,7 +146,7 @@ class VisualRunner:
         """Handle a mouse click for the human player."""
         if self._human_bot is None or self._human_pid is None:
             return
-        if self._game.is_over:
+        if self._base.game.is_over:
             return
 
         # Right-click deselects.
@@ -188,12 +165,12 @@ class VisualRunner:
         # Get owner of clicked sun (0=neutral if no sun).
         clicked_owner = 0
         if clicked_sun_id is not None:
-            sun = self._game.state.suns.get(clicked_sun_id)
+            sun = self._base.game.state.suns.get(clicked_sun_id)
             if sun is not None:
                 clicked_owner = int(sun.owner)
 
         shift_held = pygame.key.get_mods() & pygame.KMOD_SHIFT != 0
-        view = self._game.get_view(self._human_pid)
+        view = self._base.game.get_view(self._human_pid)
         self._human_bot.handle_click(
             clicked_sun_id,
             clicked_owner,
@@ -206,7 +183,7 @@ class VisualRunner:
         """Find the sun at the given map coordinates, or None."""
         best_id: SunId | None = None
         best_dist = float("inf")
-        for sid, sun in self._game.state.suns.items():
+        for sid, sun in self._base.game.state.suns.items():
             dx = sun.position.x - map_x
             dy = sun.position.y - map_y
             dist = (dx * dx + dy * dy) ** 0.5
