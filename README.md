@@ -223,6 +223,8 @@ class MyBot(Bot):
         return actions
 ```
 
+Set `self._intent` to describe what your bot is thinking — the sports commentary system reads this and weaves it into the play-by-play during watch mode.
+
 Add it to `BOT_REGISTRY` in `bots/registry.py` and it appears in the GUI menu automatically.
 
 ## Project Structure
