@@ -76,14 +76,16 @@ _MAP_FLAVOUR_NAMES = list(FLAVOURS.keys())
 
 
 def _evaluate_individual(
-    args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]], bool],
+    args: tuple[list[float], int, int, list[list[float]], bool, list[list[float]], bool, float],
 ) -> float:
     """Evaluate a single individual. Designed to be called via ProcessPoolExecutor.
 
     Args is a tuple of (genome, games_per_eval, rng_seed, hall_of_fame_genomes,
-    self_play, peer_genomes, neural).
+    self_play, peer_genomes, neural, curriculum_phase).
     """
-    genome, games_per_eval, rng_seed, hall_of_fame, self_play, peers, neural = args
+    genome, games_per_eval, rng_seed, hall_of_fame, self_play, peers, neural, curriculum_phase = (
+        args
+    )
 
     config = GameConfig(max_ticks=10_000)
 
@@ -102,9 +104,13 @@ def _evaluate_individual(
     opponent_weights: list[float] = []
 
     if not self_play:
+        # Curriculum: phase 0.0 → only easy opponents (weight ≤ 0.8),
+        # phase 0.5 → medium too (weight ≤ 1.1), phase 1.0 → all opponents.
+        difficulty_cap = 0.8 + curriculum_phase * 0.6  # 0.8 → 1.4
         for i, (cls, weight) in enumerate(OPPONENT_BOTS_WITH_WEIGHTS):
-            opponents.append(_make_opponent(cls, rng_seed + i))
-            opponent_weights.append(weight)
+            if weight <= difficulty_cap:
+                opponents.append(_make_opponent(cls, rng_seed + i))
+                opponent_weights.append(weight)
 
     # Play against hall-of-fame bots (previous best genomes).
     bot_cls: type[Bot] = NeuralBot if neural else EvolvedBot
@@ -222,6 +228,7 @@ def train(config: TrainingConfig) -> list[float]:
             # Build evaluation tasks.
             # In self-play mode, each individual plays against a sample of
             # peers (other genomes in the population, excluding itself).
+            curriculum_phase = gen / max(config.generations - 1, 1)
             tasks = []
             for idx, ind in enumerate(population):
                 peers: list[list[float]] = (
@@ -240,6 +247,7 @@ def train(config: TrainingConfig) -> list[float]:
                         config.self_play,
                         peers,
                         config.neural,
+                        curriculum_phase,
                     )
                 )
 
