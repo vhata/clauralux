@@ -163,12 +163,16 @@ pub fn expander_bot(state: &TState, cfg: &TConfig, pid: i64, _bot: &mut BotState
         }
     }
 
-    // Attack weakest enemy
+    // Attack weakest enemy. Lower force ratio if behind on economy.
     let enemies = enemy_suns(state, pid);
     if !enemies.is_empty() {
+        let my_level_sum: i64 = mine.iter().map(|s| s.level).sum();
+        let enemy_level_sum: i64 = enemies.iter().map(|s| s.level).sum();
+        let ratio = if enemy_level_sum > my_level_sum { 0.9 } else { 1.2 };
+
         let target = enemies.iter().min_by(|a, b| a.garrison.partial_cmp(&b.garrison).unwrap()).unwrap();
         let avail = total_available(&mine, 3.0);
-        if avail >= target.garrison * 1.2 {
+        if avail >= target.garrison * ratio {
             return send_from_all(&mine, target.id, 3.0);
         }
     }
@@ -203,7 +207,10 @@ pub fn turtle_bot(state: &TState, cfg: &TConfig, pid: i64, _bot: &mut BotState) 
 
     // Early neutral grab
     let avg_level: f64 = mine.iter().map(|s| s.level as f64).sum::<f64>() / mine.len() as f64;
-    if avg_level < 2.0 {
+    let enemies = enemy_suns(state, pid);
+    let losing_territory = enemies.len() > mine.len();
+
+    if avg_level < 2.0 && !losing_territory {
         let neutrals: Vec<&TSun> = neutral_suns(state).into_iter().filter(|s| s.garrison <= 15.0).collect();
         if let Some(target) = nearest_to_any(&mine, &neutrals) {
             let avail = total_available(&mine, 5.0);
@@ -214,12 +221,13 @@ pub fn turtle_bot(state: &TState, cfg: &TConfig, pid: i64, _bot: &mut BotState) 
         return vec![];
     }
 
-    // Attack
+    // Attack. Lower threshold if losing territory.
     let targets = non_friendly_suns(state, pid);
     if targets.is_empty() { return vec![]; }
     let target = targets.iter().min_by(|a, b| a.garrison.partial_cmp(&b.garrison).unwrap()).unwrap();
     let total_garrison: f64 = mine.iter().map(|s| s.garrison).sum();
-    if total_garrison < 40.0 { return vec![]; }
+    let threshold = if losing_territory { 20.0 } else { 40.0 };
+    if total_garrison < threshold { return vec![]; }
     send_from_all(&mine, target.id, 5.0)
 }
 
@@ -232,9 +240,18 @@ pub fn rush_bot(state: &TState, cfg: &TConfig, pid: i64, _bot: &mut BotState) ->
 
     let avail = total_available(&mine, 1.0);
 
-    // Mid-game upgrade if no easy targets
+    // Mid-game: if no easy targets, grab neutrals or upgrade.
     let easy: Vec<&&TSun> = targets.iter().filter(|t| t.garrison < avail * 0.8).collect();
     if easy.is_empty() {
+        // Grab nearest neutral first.
+        let neutrals = neutral_suns(state);
+        if !neutrals.is_empty() {
+            if let Some(target) = nearest_to_any(&mine, &neutrals) {
+                if avail > target.garrison {
+                    return send_from_all(&mine, target.id, 1.0);
+                }
+            }
+        }
         for sun in &mine {
             if sun.level < cfg.max_sun_level {
                 let cost_idx = (sun.level - 1) as usize;
@@ -382,11 +399,21 @@ pub fn swarm_bot(state: &TState, cfg: &TConfig, pid: i64, _bot: &mut BotState) -
         if !actions.is_empty() { return actions; }
     }
 
-    // Spread
-    let weak_targets: Vec<&TSun> = {
-        let filtered: Vec<&TSun> = targets.iter().filter(|t| t.garrison <= (send_size * 4) as f64).copied().collect();
-        if filtered.is_empty() { targets.iter().copied().collect() } else { filtered }
-    };
+    // Spread: only attack genuinely weak targets.
+    let weak_targets: Vec<&TSun> = targets.iter().filter(|t| t.garrison <= (send_size * 3) as f64).copied().collect();
+    if weak_targets.is_empty() {
+        // No weak targets — grab a neutral or save up.
+        let neutrals: Vec<&TSun> = targets.iter().filter(|t| t.owner == 0).copied().collect();
+        if !neutrals.is_empty() {
+            if let Some(grab) = nearest_to_any(&mine, &neutrals) {
+                let total: f64 = ready.iter().map(|s| s.garrison - 2.0).sum();
+                if total > grab.garrison {
+                    return send_from_all(&ready, grab.id, 2.0);
+                }
+            }
+        }
+        return vec![];
+    }
 
     let mut actions = Vec::new();
     for sun in &ready {

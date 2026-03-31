@@ -55,8 +55,12 @@ class TurtleBot(Bot):
                     )
                     return self._send_from_all(my_suns, target)
 
-        # Phase 3: attack once average level >= 2 and garrison is high enough.
-        if avg_level < 2:
+        # Phase 3: attack. Normally wait for avg level >= 2, but if losing
+        # territory (fewer suns than enemies), attack immediately.
+        enemy_suns = view.enemy_suns()
+        losing_territory = len(enemy_suns) > len(my_suns)
+
+        if avg_level < 2 and not losing_territory:
             self._intent = f"Turtling: avg level {avg_level:.1f}, waiting for upgrades."
             return []
 
@@ -68,10 +72,10 @@ class TurtleBot(Bot):
         target = min(targets, key=lambda s: s.garrison)
         total_garrison = sum(s.garrison for s in my_suns)
 
-        if total_garrison < self._attack_threshold:
-            self._intent = (
-                f"Building up: {int(total_garrison)} garrison, need {self._attack_threshold}."
-            )
+        # Lower threshold if losing territory — can't afford to wait.
+        threshold = self._attack_threshold // 2 if losing_territory else self._attack_threshold
+        if total_garrison < threshold:
+            self._intent = f"Building up: {int(total_garrison)} garrison, need {threshold}."
             return []
 
         owner_label = f"P{target.owner}" if target.owner else "neutral"

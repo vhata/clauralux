@@ -80,12 +80,26 @@ class SwarmBot(Bot):
                 )
                 return actions
 
-        # Spread mode: each sun attacks its nearest weak target.
-        actions = []
-        weak_targets: list[SunView] = [t for t in targets if t.garrison <= send_size * 4]
+        # Spread mode: only attack targets that are genuinely weak.
+        weak_targets: list[SunView] = [t for t in targets if t.garrison <= send_size * 3]
         if not weak_targets:
-            weak_targets = list(targets)
+            # No weak targets — don't waste small groups. Grab a neutral or save up.
+            grab = self._find_nearest_neutral(targets, my_suns)
+            if grab is not None:
+                total = sum(s.garrison - self._reserve for s in available_suns)
+                if total > grab.garrison:
+                    actions = []
+                    for sun in available_suns:
+                        amount = int(sun.garrison - self._reserve)
+                        if amount > 0:
+                            actions.append(SendUnits(sun.id, grab.id, amount))
+                    if actions:
+                        self._intent = f"No weak targets. Grabbing neutral Sun {grab.id}."
+                        return actions
+            self._intent = "Saving up for a bigger strike."
+            return []
 
+        actions = []
         for sun in available_suns:
             tgt: SunView = min(weak_targets, key=lambda t: sun.position.distance_to(t.position))
             amount = min(send_size, sun.garrison - self._reserve)
@@ -93,8 +107,24 @@ class SwarmBot(Bot):
                 actions.append(SendUnits(sun.id, tgt.id, amount))
 
         if actions:
-            self._intent = f"Swarming — {len(actions)} groups launched."
+            self._intent = f"Swarming — {len(actions)} groups at weak targets."
         else:
             self._intent = "Building reserves."
 
         return actions
+
+    def _find_nearest_neutral(
+        self, targets: list[SunView], my_suns: tuple[SunView, ...]
+    ) -> SunView | None:
+        neutrals = [t for t in targets if t.owner == 0]
+        if not neutrals:
+            return None
+        best: SunView | None = None
+        best_dist = float("inf")
+        for n in neutrals:
+            for s in my_suns:
+                d = s.position.distance_to(n.position)
+                if d < best_dist:
+                    best_dist = d
+                    best = n
+        return best

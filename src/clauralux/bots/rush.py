@@ -33,9 +33,20 @@ class RushBot(Bot):
 
         total_available = sum(max(0, s.garrison - self._reserve) for s in my_suns)
 
-        # Mid-game transition: if no easy targets, invest in upgrades.
+        # Mid-game transition: if no easy enemy targets, grab neutrals or upgrade.
         easy_targets = [t for t in targets if t.garrison < total_available * 0.8]
         if not easy_targets:
+            # Grab nearest neutral first — don't just sit idle.
+            neutrals = view.neutral_suns()
+            if neutrals:
+                nearest_neutral = min(
+                    neutrals,
+                    key=lambda t: min(m.position.distance_to(t.position) for m in my_suns),
+                )
+                if total_available > nearest_neutral.garrison:
+                    self._intent = f"No easy fights. Grabbing neutral Sun {nearest_neutral.id}."
+                    return self._send_from_all(my_suns, nearest_neutral)
+
             for sun in my_suns:
                 if sun.level < view.config.max_sun_level:
                     cost_idx = sun.level - 1
@@ -94,4 +105,12 @@ class RushBot(Bot):
                 f" ({owner_label}, garrison {best_target.garrison})."
             )
 
+        return actions
+
+    def _send_from_all(self, my_suns: tuple[SunView, ...], target: SunView) -> list[Action]:
+        actions: list[Action] = []
+        for sun in my_suns:
+            available = sun.garrison - self._reserve
+            if available > 0:
+                actions.append(SendUnits(sun.id, target.id, available))
         return actions

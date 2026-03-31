@@ -60,14 +60,21 @@ class ExpanderBot(Bot):
                     )
                     return actions
 
-        # Phase 3: attack weakest enemy.
+        # Phase 3: attack weakest enemy. Lower force ratio if outleveled
+        # (behind on economy — need to disrupt before opponent snowballs).
         enemies = view.enemy_suns()
         if enemies:
+            my_level_sum = sum(s.level for s in my_suns)
+            enemy_level_sum = sum(s.level for s in enemies)
+            behind = enemy_level_sum > my_level_sum
+            ratio = 0.9 if behind else 1.2
+
             target = min(enemies, key=lambda s: s.garrison)
-            actions = self._send_from_all(my_suns, target, force_ratio=1.2)
+            actions = self._send_from_all(my_suns, target, force_ratio=ratio)
             if actions:
+                urgency = "Disrupting economy!" if behind else "Attacking"
                 self._intent = (
-                    f"No neutrals left. Attacking weakest enemy Sun {target.id}"
+                    f"{urgency} Weakest enemy Sun {target.id}"
                     f" (P{target.owner}, garrison {target.garrison})."
                 )
                 return actions
