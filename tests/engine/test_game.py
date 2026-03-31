@@ -1,5 +1,7 @@
 from typing import Any
 
+import pytest
+
 from clauralux.engine.actions import SendUnits, UpgradeSun
 from clauralux.engine.config import GameConfig
 from clauralux.engine.game import Game
@@ -306,3 +308,15 @@ class TestView:
         assert len(view.my_suns()) == 1
         assert len(view.enemy_suns()) == 1
         assert len(view.neutral_suns()) == 1
+
+
+class TestConfigValidation:
+    def test_upgrade_costs_sufficient(self) -> None:
+        """Config with matching upgrade_costs and max_sun_level is fine."""
+        config = GameConfig(max_sun_level=3, upgrade_costs=[20, 40])
+        assert config.max_sun_level == 3
+
+    def test_upgrade_costs_insufficient_raises(self) -> None:
+        """Config with too few upgrade costs for max_sun_level raises ValueError."""
+        with pytest.raises(ValueError, match="requires 4 upgrade costs"):
+            GameConfig(max_sun_level=5, upgrade_costs=[20, 40])

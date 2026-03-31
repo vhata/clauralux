@@ -74,17 +74,31 @@ impl GameConfig {
         default_neutral_garrison: f64,
         default_player_garrison: f64,
         seed: Option<i64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         // Treat max_ticks <= 0 as None (no tick limit).
         let max_ticks = max_ticks.filter(|&t| t > 0);
 
-        GameConfig {
+        let upgrade_costs = upgrade_costs.unwrap_or_else(|| vec![20, 40]);
+
+        // Validate: upgrade_costs must have enough entries for max_sun_level.
+        // Need (max_sun_level - 1) costs (one per upgrade from level 1 to max).
+        let needed = (max_sun_level - 1) as usize;
+        if upgrade_costs.len() < needed {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "max_sun_level={} requires {} upgrade costs, but only {} provided",
+                max_sun_level,
+                needed,
+                upgrade_costs.len()
+            )));
+        }
+
+        Ok(GameConfig {
             map_width,
             map_height,
             production_interval,
             production_per_level,
             max_sun_level,
-            upgrade_costs: upgrade_costs.unwrap_or_else(|| vec![20, 40]),
+            upgrade_costs,
             capture_level_reset,
             unit_speed,
             attack_ratio,
@@ -94,7 +108,7 @@ impl GameConfig {
             default_neutral_garrison,
             default_player_garrison,
             seed,
-        }
+        })
     }
 
     /// Create a new GameConfig with specified fields overridden.
