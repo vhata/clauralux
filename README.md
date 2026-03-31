@@ -191,15 +191,19 @@ The easiest way to start a game. Guides you through setup with friendly prompts:
 ./clauralux benchmark
 ./clauralux benchmark --benchmark-games 100
 
-# Train the neural net bot (needs bigger population for 1373 weights)
+# Train the neural net bot (needs bigger population for 2653 weights)
 ./clauralux train --neural --from-scratch
 ./clauralux megatrain --neural --from-scratch
 
 # Benchmark the neural bot
 ./clauralux benchmark --neural
+
+# Analyze all bots: run every bot vs every bot, diagnose weaknesses
+./clauralux analyze
+./clauralux analyze --games 50 --output data/analysis.json
 ```
 
-Training automatically runs a before/after benchmark and shows a comparison table.
+Training automatically runs a before/after benchmark and shows a comparison table. The `analyze` command runs a full round-robin matchup matrix and diagnoses why specific bots lose — useful for improving hand-crafted bot strategies.
 
 ### Visual Controls
 
@@ -253,7 +257,7 @@ src/clauralux/
         base.py         # Abstract Bot class with intent narration
         registry.py     # Central bot registry
         evolved.py      # Phase-based bot with 3x25 evolvable weights
-        neural.py       # MLP neural net bot (1373 weights)
+        neural.py       # MLP neural net bot (2653 weights)
     training/           # Evolutionary training system
         genome.py       # Parameter definitions and serialization
         evolution.py    # Selection, crossover, mutation, weighted fitness
