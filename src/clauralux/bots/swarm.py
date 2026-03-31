@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from clauralux.engine.actions import Action, SendUnits
-from clauralux.engine.view import GameView
+from clauralux.engine.actions import Action, SendUnits, UpgradeSun
+from clauralux.engine.view import GameView, SunView
 
 from .base import Bot
 
 
 class SwarmBot(Bot):
-    """Many small attacks from every sun, every tick. Death by a thousand cuts."""
+    """Many small attacks from every sun. Death by a thousand cuts.
 
-    def __init__(self, send_size: int = 3, act_interval: int = 15) -> None:
+    Improved: scales group size, concentrates on weak targets, upgrades when idle.
+    """
+
+    def __init__(self, min_send: int = 3, act_interval: int = 15) -> None:
         super().__init__()
-        self._send_size = send_size
+        self._min_send = min_send
         self._act_interval = act_interval
+        self._reserve = 2
 
     def decide(self, view: GameView) -> list[Action]:
         if view.tick % self._act_interval != 0:
@@ -23,49 +27,74 @@ class SwarmBot(Bot):
             self._intent = "No suns. Swarmed out."
             return []
 
-        targets = [s for s in view.suns if s.owner != view.my_id]
+        targets: list[SunView] = [s for s in view.suns if s.owner != view.my_id]
         if not targets:
             self._intent = "Everything is mine. The swarm has consumed all."
             return []
 
-        # Check if we can concentrate fire on a high-priority target.
-        available_suns = [s for s in my_suns if s.garrison >= self._send_size + 1]
-        total_available = len(available_suns) * self._send_size
+        # Find the weakest target.
+        weakest = min(targets, key=lambda t: t.garrison)
 
-        if total_available > 0:
-            # Find the weakest target overall.
-            weakest = min(targets, key=lambda t: t.garrison)
-            if weakest.garrison <= total_available // 2 and len(available_suns) >= 2:
-                # Concentrate fire: send from the 2 nearest suns to this one target.
-                nearest_suns = sorted(
-                    available_suns,
-                    key=lambda s: s.position.distance_to(weakest.position),
-                )[:2]
-                actions: list[Action] = [
-                    SendUnits(s.id, weakest.id, self._send_size) for s in nearest_suns
-                ]
+        # Scale send size: at least min_send, up to 1/3 of weakest target garrison.
+        send_size = max(self._min_send, int(weakest.garrison * 0.35))
+
+        available_suns: list[SunView] = [
+            s for s in my_suns if s.garrison > send_size + self._reserve
+        ]
+
+        # If no suns have enough to attack, upgrade instead.
+        if not available_suns:
+            for sun in my_suns:
+                if sun.level < view.config.max_sun_level:
+                    cost_idx = sun.level - 1
+                    if cost_idx < len(view.config.upgrade_costs):
+                        cost = view.config.upgrade_costs[cost_idx]
+                        if sun.garrison >= cost:
+                            self._intent = f"No attack force. Upgrading Sun {sun.id}."
+                            return [UpgradeSun(sun.id)]
+            self._intent = "Building up swarm reserves."
+            return []
+
+        # Concentration mode: if weakest target is killable, focus fire.
+        total_sendable = len(available_suns) * send_size
+        if weakest.garrison <= total_sendable * 0.7:
+            # Send from the nearest suns — enough to overwhelm.
+            needed = int(weakest.garrison * 1.3) + 1
+            nearest = sorted(
+                available_suns,
+                key=lambda s: s.position.distance_to(weakest.position),
+            )
+            actions: list[Action] = []
+            sent = 0
+            for sun in nearest:
+                amount = min(send_size, sun.garrison - self._reserve)
+                if amount > 0:
+                    actions.append(SendUnits(sun.id, weakest.id, amount))
+                    sent += amount
+                if sent >= needed:
+                    break
+            if actions:
                 self._intent = (
-                    f"Concentrating fire — {len(actions)} groups targeting"
+                    f"Concentrating — {len(actions)} groups ({sent} units) at"
                     f" Sun {weakest.id} (garrison {weakest.garrison})."
                 )
                 return actions
 
-        # Fallback: spread attacks from every sun to its nearest target.
+        # Spread mode: each sun attacks its nearest weak target.
         actions = []
-        groups_launched = 0
+        weak_targets: list[SunView] = [t for t in targets if t.garrison <= send_size * 4]
+        if not weak_targets:
+            weak_targets = list(targets)
 
-        for sun in my_suns:
-            if sun.garrison < self._send_size + 1:
-                continue
+        for sun in available_suns:
+            tgt: SunView = min(weak_targets, key=lambda t: sun.position.distance_to(t.position))
+            amount = min(send_size, sun.garrison - self._reserve)
+            if amount >= self._min_send:
+                actions.append(SendUnits(sun.id, tgt.id, amount))
 
-            # Find the nearest target to this specific sun.
-            nearest = min(targets, key=lambda t: sun.position.distance_to(t.position))
-            actions.append(SendUnits(sun.id, nearest.id, self._send_size))
-            groups_launched += 1
-
-        if groups_launched > 0:
-            self._intent = f"Swarming — {groups_launched} groups launched at nearby targets."
+        if actions:
+            self._intent = f"Swarming — {len(actions)} groups launched."
         else:
-            self._intent = "Building up for the next wave."
+            self._intent = "Building reserves."
 
         return actions
