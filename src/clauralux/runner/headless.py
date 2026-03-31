@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from clauralux.bots.base import Bot
 from clauralux.engine.config import GameConfig
@@ -12,6 +12,24 @@ from clauralux.replay.recorder import GameRecorder
 
 
 @dataclass(frozen=True, slots=True)
+class PlayerSnapshot:
+    """One player's state at a point in time."""
+
+    suns: int
+    garrison: int
+    in_flight: int
+    level_sum: int
+
+
+@dataclass(frozen=True, slots=True)
+class GameSnapshot:
+    """State of all players at a point in time."""
+
+    tick: int
+    players: dict[PlayerId, PlayerSnapshot]
+
+
+@dataclass(frozen=True, slots=True)
 class GameResult:
     """Result of a completed game."""
 
@@ -19,6 +37,7 @@ class GameResult:
     ticks: int
     eliminated: frozenset[PlayerId]
     is_draw: bool
+    snapshots: tuple[GameSnapshot, ...] = field(default=())
 
 
 class HeadlessRunner:
@@ -30,10 +49,11 @@ class HeadlessRunner:
         initial_state: GameState,
         bots: Mapping[PlayerId, Bot],
         recorder: GameRecorder | None = None,
+        snapshot_interval: int = 0,
     ) -> None:
         from clauralux.runner.base import BaseRunner
 
-        self._base = BaseRunner(config, initial_state, bots, recorder)
+        self._base = BaseRunner(config, initial_state, bots, recorder, snapshot_interval)
 
     @property
     def game(self) -> Game:
@@ -46,6 +66,7 @@ class HeadlessRunner:
         while not self._base.game.is_over:
             self._base._run_decision_tick()
             self._base.game.tick()
+            self._base._maybe_snapshot()
 
         self._base._notify_end()
         return self._base._build_result()
