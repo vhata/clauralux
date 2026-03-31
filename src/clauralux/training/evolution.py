@@ -70,7 +70,7 @@ def evaluate_fitness(
     games_per_eval: int,
     rng_seed: int | None = None,
     opponent_weights: Sequence[float] | None = None,
-    worst_case_weight: float = 0.3,
+    worst_case_weight: float = 0.5,
 ) -> float:
     """Evaluate a bot's fitness by playing games against various opponents.
 

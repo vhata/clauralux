@@ -1255,7 +1255,7 @@ def _run_benchmark_core(games_per_opponent: int, bot_name: str = "evolved") -> B
     from clauralux.runner.tournament import run_tournament
 
     config = GameConfig(max_ticks=10_000)
-    excluded = {"passive", "evolved", "neural"}
+    excluded = {"passive", "evolved", "neural", "human"}
     opponents = [name for name in BOT_REGISTRY if name not in excluded]
 
     map_factories: list[MapFactory] = [two_player_simple]

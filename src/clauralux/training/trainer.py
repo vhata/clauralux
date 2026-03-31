@@ -238,7 +238,7 @@ def _evaluate_all_rust(
         default=0.0,
     )
 
-    return 0.7 * avg + 0.3 * worst
+    return 0.5 * avg + 0.5 * worst
 
 
 def train(config: TrainingConfig) -> list[float]:
