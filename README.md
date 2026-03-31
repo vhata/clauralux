@@ -162,6 +162,9 @@ The easiest way to start a game. Guides you through setup with friendly prompts:
 # Record a game for replay
 ./clauralux watch --bot evolved --bot sniper --record game.json
 
+# Record with gzip compression
+./clauralux watch --bot evolved --bot sniper --record game.json.gz
+
 # Play back a recorded game
 ./clauralux replay game.json
 ```

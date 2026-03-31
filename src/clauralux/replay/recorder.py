@@ -91,15 +91,29 @@ class GameRecorder:
 
 
 def save_replay(data: ReplayData, path: str | Path) -> None:
-    """Save a replay to a JSON file."""
+    """Save a replay to a JSON file. Use .json.gz extension for gzip compression."""
+    import gzip
+
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(_replay_to_dict(data), indent=2) + "\n")
+    content = json.dumps(_replay_to_dict(data), indent=2) + "\n"
+    if p.suffix == ".gz" or str(p).endswith(".json.gz"):
+        with gzip.open(p, "wt", encoding="utf-8") as f:
+            f.write(content)
+    else:
+        p.write_text(content)
 
 
 def load_replay(path: str | Path) -> ReplayData:
-    """Load a replay from a JSON file."""
-    raw = json.loads(Path(path).read_text())
+    """Load a replay from a JSON file. Handles both plain and gzipped files."""
+    import gzip
+
+    p = Path(path)
+    if p.suffix == ".gz" or str(p).endswith(".json.gz"):
+        with gzip.open(p, "rt", encoding="utf-8") as f:
+            raw = json.loads(f.read())
+    else:
+        raw = json.loads(p.read_text())
     return ReplayData(
         version=raw.get("version", 1),
         timestamp=raw.get("timestamp", ""),
