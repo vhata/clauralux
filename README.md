@@ -55,7 +55,21 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 
 ## Maps
 
-Standard maps scale by player count (2p through 6p). Themed maps have unique strategic puzzles:
+### Standard Maps
+
+Symmetric maps that scale by player count, used as defaults:
+
+| Map | Players | Description |
+|-----|---------|-------------|
+| **simple** | 2 | Two player suns with 3 neutrals in a line between them. |
+| **triangle** | 3 | Players at triangle vertices with neutrals between each pair. |
+| **cross** | 4 | Players at compass points, neutrals between, fortified centre. |
+| **pentagon** | 5 | Pentagon arrangement with neutrals on each edge and centre. |
+| **hex** | 6 | Hexagonal layout with inner and outer neutral rings. |
+
+### Themed Maps
+
+Unique strategic puzzles for specific player counts:
 
 | Map | Players | Description |
 |-----|---------|-------------|
