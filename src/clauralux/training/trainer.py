@@ -82,21 +82,23 @@ def _evaluate_individual(
     config = GameConfig(max_ticks=10_000)
 
     # Build opponent list: named bots + genome-based opponents.
-    # Named bots (hand-crafted) — filtered by curriculum.
+    # Always include hand-crafted bots (filtered by curriculum).
     named_opponents: list[tuple[str, float]] = []
     genome_opponents: list[tuple[list[float], float]] = []
 
-    if not self_play:
-        difficulty_cap = 0.8 + curriculum_phase * 0.6
-        for name, weight in training_opponent_names_with_weights():
-            if weight <= difficulty_cap:
-                named_opponents.append((name, weight))
+    difficulty_cap = 0.8 + curriculum_phase * 0.6
+    for name, weight in training_opponent_names_with_weights():
+        if weight <= difficulty_cap:
+            named_opponents.append((name, weight))
 
-    # Hall-of-fame + peers (genome-based).
+    # Hall-of-fame genomes.
     for hof_genome in hall_of_fame:
         genome_opponents.append((hof_genome, 1.0))
-    for peer_genome in peers:
-        genome_opponents.append((peer_genome, 1.0))
+
+    # In self-play mode, also play against peers from the current population.
+    if self_play:
+        for peer_genome in peers:
+            genome_opponents.append((peer_genome, 1.0))
 
     # Build map factories.
     maps: list[Callable[[GameConfig], GameState]] = [
@@ -450,7 +452,11 @@ def train(config: TrainingConfig) -> list[float]:
 
 
 def _quick_benchmark(genome: list[float], neural: bool, games_per_opponent: int) -> float:
-    """Run a quick benchmark and return overall win percentage."""
+    """Run a quick benchmark and return worst-case-aware score.
+
+    Returns 0.5 * overall_win_pct + 0.5 * worst_opponent_win_pct,
+    matching the training fitness function's worst-case weighting.
+    """
     from clauralux._engine import run_training_game_vs_bot
     from clauralux.bots.registry import training_opponent_names_with_weights
 
@@ -462,10 +468,12 @@ def _quick_benchmark(genome: list[float], neural: bool, games_per_opponent: int)
         *(_make_map(f, 42 + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
     ]
 
-    total_wins = 0
-    total_games = 0
+    per_opp_wins: dict[str, int] = {}
+    per_opp_games: dict[str, int] = {}
 
     for opp_name, _ in opponents:
+        per_opp_wins[opp_name] = 0
+        per_opp_games[opp_name] = 0
         for game_idx in range(games_per_opponent):
             map_factory = maps[game_idx % len(maps)]
             state = map_factory(config)
@@ -499,11 +507,18 @@ def _quick_benchmark(genome: list[float], neural: bool, games_per_opponent: int)
                 neural,
                 game_idx,
             )
-            total_games += 1
+            per_opp_games[opp_name] += 1
             if result.winner == 1:
-                total_wins += 1
+                per_opp_wins[opp_name] += 1
 
-    return total_wins / max(total_games, 1) * 100
+    total_wins = sum(per_opp_wins.values())
+    total_games = sum(per_opp_games.values())
+    overall = total_wins / max(total_games, 1) * 100
+
+    per_opp_rates = [per_opp_wins[n] / max(per_opp_games[n], 1) * 100 for n in per_opp_wins]
+    worst = min(per_opp_rates) if per_opp_rates else 0.0
+
+    return 0.5 * overall + 0.5 * worst
 
 
 def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
