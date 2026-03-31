@@ -20,7 +20,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 - **Bot-first architecture** — engine has zero external dependencies, runs headlessly
 - **16 built-in bots** including a human player (each with strategic intent narration)
 - **Evolutionary training** — train evolved or neural bots against all other bots, with difficulty-weighted opponents and stagnation resets
-- **Neural net bot** — recurrent MLP reads 12 game-state features + hidden state memory, outputs 29 decision parameters + action priorities each tick, adapting strategy with memory of past game states
+- **Neural net bot** — recurrent MLP reads 20 game-state features + hidden state memory, outputs 29 decision parameters + action priorities each tick, adapting strategy with memory of past game states
 - **Megatrain** — intensive multi-phase training: hand-crafted opponents, self-play refinement, then final polish with automatic before/after benchmarking
 - **Benchmark** — scorecard showing evolved or neural bot's win rate against every opponent across all maps
 - **Sports commentary** — enthusiastic commentator overlay in watch mode with event detection, floating text annotations, and optional pause-on-big-moments
@@ -50,7 +50,7 @@ All of these parameters (production speed, attack ratio, upgrade costs, level re
 | **economic** | Upgrades aggressively, then targets the opponent's highest-level suns. |
 | **baiter** | Sends small bait attacks to draw defenders, then hits the weakened suns. |
 | **evolved** | Phase-based strategy with 3 game phases (early/mid/late), each with 25 evolvable parameters. Trained by playing thousands of games against all other bots. |
-| **neural** | Recurrent MLP (12 features + 32 hidden state → 32 hidden → 29 outputs) with tick-to-tick memory. 2397 evolvable weights. Adapts strategy based on current game state and history of past states. |
+| **neural** | Recurrent MLP (20 features + 32 hidden state → 32 hidden → 29 outputs) with tick-to-tick memory. 2653 evolvable weights. Adapts strategy based on current game state and history of past states. |
 | **human** | You! Click suns to select, click targets to send units, click selected to upgrade. Shift+click sends half. |
 
 ## Maps

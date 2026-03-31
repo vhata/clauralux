@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from clauralux.engine.actions import Action
-from clauralux.engine.view import GameView
+from clauralux.engine.view import GameView, SunView
 from clauralux.training.genome import (
     NEURAL_HIDDEN,
     NEURAL_INPUT_SIZE,
@@ -41,10 +41,15 @@ _ACTION_NAMES = ("threats", "reinforce", "upgrade", "attack")
 
 
 def extract_features(view: GameView) -> list[float]:
-    """Extract 12 normalized features from the current game state."""
+    """Extract 20 normalized features from the current game state.
+
+    Features 0-11: original aggregate features (ratios, levels, threats).
+    Features 12-19: spatial and distribution features for map awareness.
+    """
     max_ticks = view.config.max_ticks or 10_000
     max_level = view.config.max_sun_level
     total_suns = max(len(view.suns), 1)
+    map_diag = (view.config.map_width**2 + view.config.map_height**2) ** 0.5
 
     my_suns = view.my_suns()
     enemy_suns = view.enemy_suns()
@@ -77,20 +82,82 @@ def extract_features(view: GameView) -> list[float]:
     enemy_sun_count = len(enemy_suns)
     contested_suns = max(my_sun_count + enemy_sun_count, 1)
 
+    # ── Spatial features ───────────────────────────────────────────────
+
+    # Nearest distance from any of my suns to an enemy sun (normalized).
+    min_dist_to_enemy = 1.0
+    if my_suns and enemy_suns:
+        min_dist_to_enemy = min(_sun_dist(ms, es) / map_diag for ms in my_suns for es in enemy_suns)
+
+    # Nearest distance from any of my suns to a neutral sun.
+    min_dist_to_neutral = 1.0
+    if my_suns and neutral_suns:
+        min_dist_to_neutral = min(
+            _sun_dist(ms, ns) / map_diag for ms in my_suns for ns in neutral_suns
+        )
+
+    # Weakest enemy garrison (normalized by total garrison).
+    weakest_enemy_garrison = 0.0
+    if enemy_suns:
+        weakest_enemy_garrison = min(s.garrison for s in enemy_suns) / max(total_garrison, 1.0)
+
+    # Strongest own garrison (normalized).
+    strongest_own_garrison = 0.0
+    if my_suns:
+        strongest_own_garrison = max(s.garrison for s in my_suns) / max(total_garrison, 1.0)
+
+    # Garrison concentration: std_dev / mean of own garrisons (0 = even, high = concentrated).
+    garrison_concentration = 0.0
+    if len(my_suns) > 1:
+        my_garrs = [float(s.garrison) for s in my_suns]
+        mean_g = sum(my_garrs) / len(my_garrs)
+        if mean_g > 0:
+            variance = sum((g - mean_g) ** 2 for g in my_garrs) / len(my_garrs)
+            garrison_concentration = min(1.0, (variance**0.5) / mean_g)
+
+    # Number of enemy groups heading at my suns (engagement pressure).
+    enemy_wave_count = sum(1 for g in view.enemy_unit_groups() if g.target_sun_id in my_sun_ids)
+    wave_pressure = min(1.0, enemy_wave_count / max(my_sun_count, 1))
+
+    # Friendly units heading to enemy suns (offensive commitment).
+    enemy_sun_ids = {s.id for s in enemy_suns}
+    my_offensive = sum(g.count for g in view.my_unit_groups() if g.target_sun_id in enemy_sun_ids)
+    offensive_commitment = my_offensive / max(my_garrison + my_flight, 1.0)
+
+    # Number of players still alive (multi-player awareness).
+    alive = len(view.players) - len(view.eliminated)
+    multi_player = min(1.0, (alive - 1) / max(len(view.players) - 1, 1))
+
     return [
-        min(1.0, view.tick / max_ticks),  # tick_fraction
-        my_sun_count / total_suns,  # my_sun_ratio
-        enemy_sun_count / total_suns,  # enemy_sun_ratio
-        len(neutral_suns) / total_suns,  # neutral_sun_ratio
-        my_garrison / total_garrison,  # garrison_ratio
-        my_flight / total_flight,  # flight_ratio
-        min(1.0, my_avg_level),  # my_avg_level
-        min(1.0, enemy_avg_level),  # enemy_avg_level
-        my_level_sum / total_production,  # production_ratio
-        min(1.0, threat),  # threat_level
-        my_sun_count / contested_suns,  # territory_control
-        my_level_sum / total_level,  # eco_advantage
+        # Original 12 features.
+        min(1.0, view.tick / max_ticks),  # 0: tick_fraction
+        my_sun_count / total_suns,  # 1: my_sun_ratio
+        enemy_sun_count / total_suns,  # 2: enemy_sun_ratio
+        len(neutral_suns) / total_suns,  # 3: neutral_sun_ratio
+        my_garrison / total_garrison,  # 4: garrison_ratio
+        my_flight / total_flight,  # 5: flight_ratio
+        min(1.0, my_avg_level),  # 6: my_avg_level
+        min(1.0, enemy_avg_level),  # 7: enemy_avg_level
+        my_level_sum / total_production,  # 8: production_ratio
+        min(1.0, threat),  # 9: threat_level
+        my_sun_count / contested_suns,  # 10: territory_control
+        my_level_sum / total_level,  # 11: eco_advantage
+        # New spatial/distribution features.
+        min_dist_to_enemy,  # 12: nearest enemy distance
+        min_dist_to_neutral,  # 13: nearest neutral distance
+        weakest_enemy_garrison,  # 14: weakest enemy garrison
+        strongest_own_garrison,  # 15: strongest own garrison
+        garrison_concentration,  # 16: garrison spread
+        wave_pressure,  # 17: incoming attack pressure
+        offensive_commitment,  # 18: units committed to attacks
+        multi_player,  # 19: alive player ratio
     ]
+
+
+def _sun_dist(a: SunView, b: SunView) -> float:
+    dx = float(a.position.x - b.position.x)
+    dy = float(a.position.y - b.position.y)
+    return float((dx * dx + dy * dy) ** 0.5)
 
 
 # ── MLP Forward Pass ────────────────────────────────────────────────────

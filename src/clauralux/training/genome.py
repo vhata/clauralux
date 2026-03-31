@@ -209,7 +209,7 @@ def load_genome(path: str | Path) -> list[float]:
 
 # ── Neural Network Genome ───────────────────────────────────────────────
 
-NEURAL_NUM_FEATURES: int = 12
+NEURAL_NUM_FEATURES: int = 20
 NEURAL_HIDDEN: int = 32
 NEURAL_NUM_OUTPUTS: int = NUM_PHASE_PARAMS + 4  # 25 params + 4 priority weights
 
