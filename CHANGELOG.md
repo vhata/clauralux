@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `analyze` command: all-vs-all bot matchup matrix with telemetry-based weakness diagnosis
+- Per-game telemetry snapshots (sun count, garrison, units in flight) for analysis
 - Quick play mode (`./clauralux play`) with guided difficulty and map selection for beginners
 - Human player with mouse controls (click to select, click to send, Shift for half, right-click deselect)
 - Neural net bot (MLP: 12 inputs → 32 hidden → 29 outputs, 1373 evolvable weights) with adaptive strategy and action priority ordering
@@ -42,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config: validate upgrade_costs length matches max_sun_level at creation
 - Runner: extracted BaseRunner to share decision-loop logic, reducing duplication
 - Tests: added multi-player scenarios (3-4 player games) and trainer.py coverage
+- ExpanderBot: threat response, faster act interval, lower upgrade threshold (+19% avg win rate)
+- TurtleBot: early neutral capture, attacks at level 2+ instead of max (+13% avg win rate)
+- RushBot: viability checks, mid-game upgrades, smarter targeting (+6% avg win rate)
+- SwarmBot: scaled group sizes, smarter concentration, fallback upgrades
 
 ### Changed
 - CLI refactored from argparse to click with proper subcommands
