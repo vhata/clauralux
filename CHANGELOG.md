@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README: added standard map descriptions (simple, triangle, cross, pentagon, hex)
 - README: explained bot `_intent` property and its role in sports commentary
 - README: clarified pygame-ce as optional dependency, separated dev setup from quickstart
+- Neural bot: recurrent memory (hidden state carries forward between ticks)
+- Neural bot: expanded input features from 12 to 20 (spatial awareness, garrison distribution)
+- Training: curriculum learning phases in easier opponents first, harder ones later
+- Tournament/benchmark: round-robin position rotation to eliminate map-position bias
+- Tournament/benchmark: `--output` flag for JSON/CSV export of results
+- Replay: gzip compression support (.json.gz extension)
+- Visual: single-tick stepping with period key for debugging
+- Visual: colorblind-safe palette option (--colorblind flag and GUI menu toggle)
+- GUI menu: mouse support (click to select/cycle, scroll wheel to navigate)
+- Config: validate upgrade_costs length matches max_sun_level at creation
+- Runner: extracted BaseRunner to share decision-loop logic, reducing duplication
+- Tests: added multi-player scenarios (3-4 player games) and trainer.py coverage
 
 ### Changed
 - CLI refactored from argparse to click with proper subcommands
