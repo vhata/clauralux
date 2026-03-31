@@ -91,20 +91,28 @@ Unique strategic puzzles for specific player counts:
 - Python 3.12+
 - Rust toolchain (install: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - uv (install: `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- pygame-ce (installed automatically with `--extra visual`, only needed for watch/GUI modes)
 
 ## Quickstart
 
 ```bash
 uv venv .venv
-uv sync --group dev --extra visual
+uv sync --extra visual
 uv run maturin develop --release   # Build the Rust engine
-uv run pre-commit install
 
 # Launch the GUI menu
 ./clauralux
 
 # Play the campaign
 ./clauralux campaign
+```
+
+### Developer Setup
+
+```bash
+uv sync --group dev --extra visual
+uv run maturin develop --release
+uv run pre-commit install
 ```
 
 ## Usage
