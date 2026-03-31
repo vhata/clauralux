@@ -40,16 +40,42 @@ def run_tournament(
     map_factory: MapFactory,
     bot_factories: dict[PlayerId, BotFactory],
     num_games: int,
+    rotate_positions: bool = False,
 ) -> TournamentResult:
-    """Run multiple games and aggregate results."""
+    """Run multiple games and aggregate results.
+
+    If *rotate_positions* is True, bot-to-player-slot assignments are
+    rotated each game so that no bot benefits from a fixed map position.
+    Wins are still attributed to the *original* player IDs passed in
+    ``bot_factories`` (i.e. the bot identity, not the slot it happened
+    to occupy in a given game).
+    """
     results: list[GameResult] = []
     wins: Counter[PlayerId] = Counter()
     draws = 0
     total_ticks = 0
 
-    for _ in range(num_games):
+    # Canonical ordering of player IDs and their factories.
+    canonical_pids = list(bot_factories.keys())
+    factories_list = [bot_factories[pid] for pid in canonical_pids]
+    n_players = len(canonical_pids)
+
+    for game_idx in range(num_games):
         state = map_factory(config)
-        bots = {pid: factory(pid) for pid, factory in bot_factories.items()}
+
+        if rotate_positions and n_players > 1:
+            # Rotate which factory gets which slot.
+            offset = game_idx % n_players
+            rotated = factories_list[offset:] + factories_list[:offset]
+            slot_to_canonical = {
+                canonical_pids[slot]: canonical_pids[(slot + offset) % n_players]
+                for slot in range(n_players)
+            }
+        else:
+            rotated = factories_list
+            slot_to_canonical = {pid: pid for pid in canonical_pids}
+
+        bots = {canonical_pids[i]: rotated[i](canonical_pids[i]) for i in range(n_players)}
         runner = HeadlessRunner(config, state, bots)
         result = runner.run()
         results.append(result)
@@ -58,7 +84,9 @@ def run_tournament(
         if result.is_draw:
             draws += 1
         elif result.winner is not None:
-            wins[result.winner] += 1
+            # Map the winning slot back to the canonical bot identity.
+            original_pid = slot_to_canonical.get(result.winner, result.winner)
+            wins[original_pid] += 1
 
     avg_ticks = total_ticks / max(num_games, 1)
 

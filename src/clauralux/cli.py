@@ -859,6 +859,7 @@ def _run_tournament(
         map_factory=map_factory,
         bot_factories=bot_factories,
         num_games=num_games,
+        rotate_positions=True,
     )
 
     click.echo(f"\nResults ({result.total_games} games):")
@@ -1122,6 +1123,7 @@ def _run_benchmark_core(games_per_opponent: int, bot_name: str = "evolved") -> B
                     PlayerId(2): _make_bot_factory(opp_name),
                 },
                 num_games=games_per_opponent,
+                rotate_positions=True,
             )
             opp_wins += result.wins.get(PlayerId(1), 0)
             opp_losses += result.wins.get(PlayerId(2), 0)
