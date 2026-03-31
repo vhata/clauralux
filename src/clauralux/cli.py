@@ -429,6 +429,54 @@ def benchmark(benchmark_games: int, neural: bool, output_path: str | None) -> No
 
 
 @main.command()
+@click.option("--games", type=int, default=20, help="Games per matchup (spread across maps).")
+@click.option("--output", "-o", "output_path", default="data/analysis.json", help="Output file.")
+def analyze(games: int, output_path: str) -> None:
+    """Run all-vs-all bot matchups and diagnose weaknesses."""
+    from clauralux.analysis import (
+        diagnose_weaknesses,
+        matchups_to_json,
+        run_matchup_matrix,
+        save_analysis,
+    )
+
+    bot_names = [n for n in BOT_REGISTRY if n not in {"passive", "human", "evolved", "neural"}]
+    n_matchups = len(bot_names) * (len(bot_names) - 1) // 2
+    click.echo(f"Analyzing {len(bot_names)} bots ({n_matchups} matchups, {games} games each)")
+
+    matchups = run_matchup_matrix(games_per_matchup=games, bot_names=bot_names)
+    weaknesses = diagnose_weaknesses(matchups)
+
+    # Print win rate matrix.
+    click.echo("\nWin Rate Matrix (row vs column):")
+    header = f"{'':>14s}" + "".join(f"{n[:6]:>8s}" for n in bot_names)
+    click.echo(header)
+    data = matchups_to_json(matchups, weaknesses)
+    matrix = data["win_rate_matrix"]
+    for name in bot_names:
+        row = f"{name:>14s}"
+        for opp in bot_names:
+            if name == opp:
+                row += "      - "
+            else:
+                pct = matrix.get(name, {}).get(opp, 0.0)
+                row += f"{pct:7.1f}%"
+        click.echo(row)
+
+    # Print weaknesses.
+    if weaknesses:
+        click.echo(f"\nDiagnosed Weaknesses ({len(weaknesses)}):")
+        for w in weaknesses:
+            click.echo(f"  {w.bot} vs {w.opponent} ({w.win_pct:.0f}%): {w.diagnosis}")
+    else:
+        click.echo("\nNo significant weaknesses found.")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    save_analysis(data, output_path)
+    click.echo(f"\nFull results saved to {output_path}")
+
+
+@main.command()
 @click.argument("replay_file", type=click.Path(exists=True))
 def replay(replay_file: str) -> None:
     """Play back a recorded game."""

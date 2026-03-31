@@ -41,6 +41,7 @@ def run_tournament(
     bot_factories: dict[PlayerId, BotFactory],
     num_games: int,
     rotate_positions: bool = False,
+    snapshot_interval: int = 0,
 ) -> TournamentResult:
     """Run multiple games and aggregate results.
 
@@ -76,7 +77,7 @@ def run_tournament(
             slot_to_canonical = {pid: pid for pid in canonical_pids}
 
         bots = {canonical_pids[i]: rotated[i](canonical_pids[i]) for i in range(n_players)}
-        runner = HeadlessRunner(config, state, bots)
+        runner = HeadlessRunner(config, state, bots, snapshot_interval=snapshot_interval)
         result = runner.run()
         results.append(result)
         total_ticks += result.ticks
