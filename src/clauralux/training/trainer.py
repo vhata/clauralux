@@ -99,12 +99,6 @@ def _evaluate_individual(
         genome_opponents.append((peer_genome, 1.0))
 
     # Build map factories.
-    def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
-        def factory(cfg: GameConfig) -> GameState:
-            return generate_map(cfg, flavour, 2, seed=seed)
-
-        return factory
-
     maps: list[Callable[[GameConfig], GameState]] = [
         two_player_simple,
         *(_make_map(f, rng_seed + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
@@ -358,14 +352,9 @@ def train(config: TrainingConfig) -> list[float]:
                 # Capture the prior best's evaluated fitness after gen 1.
                 if prior_best is not None and prior_best.fitness == 0.0:
                     prior_best.fitness = population[0].fitness
-                # Only save if we actually beat whatever was on disk.
-                if prior_best is None or best_ever.fitness > prior_best.fitness:
-                    _save_weights(best_ever.genome, output_path)
-                    # Keep a timestamped backup so good weights are never lost.
-                    backup = output_path.with_suffix(
-                        f".backup-{time.strftime('%Y%m%d-%H%M%S')}.json"
-                    )
-                    _save_weights(best_ever.genome, backup)
+                # Save candidate weights (not overwriting the main file yet).
+                candidate_path = output_path.with_suffix(".candidate.json")
+                _save_weights(best_ever.genome, candidate_path)
             else:
                 stagnation_count += 1
 
@@ -418,19 +407,33 @@ def train(config: TrainingConfig) -> list[float]:
         if executor is not None:
             executor.shutdown(wait=False)
 
-    # Final save and summary.
+    # Final comparison: benchmark candidate vs prior weights.
     assert best_ever is not None
-    if prior_best is None or best_ever.fitness > prior_best.fitness:
-        _save_weights(best_ever.genome, output_path)
-        print("=" * 60)
-        print(f"Training complete! Best fitness: {best_ever.fitness:.3f}")
-        print(f"Weights saved to: {output_path}")
+    candidate_path = output_path.with_suffix(".candidate.json")
+    _save_weights(best_ever.genome, candidate_path)
+
+    print("=" * 60)
+    if prior_best is not None:
+        # Quick benchmark both genomes to decide which is actually better.
+        print("Comparing candidate vs existing weights...")
+        bench_games = 10
+        candidate_score = _quick_benchmark(best_ever.genome, config.neural, bench_games)
+        prior_score = _quick_benchmark(prior_best.genome, config.neural, bench_games)
+        print(f"  Candidate: {candidate_score:.1f}% | Existing: {prior_score:.1f}%")
+
+        if candidate_score >= prior_score:
+            _save_weights(best_ever.genome, output_path)
+            print(f"Candidate wins! Weights saved to: {output_path}")
+        else:
+            print("Existing weights are better — keeping them.")
+            best_ever = Individual(genome=list(prior_best.genome), fitness=prior_best.fitness)
     else:
-        print("=" * 60)
-        print(
-            f"Training complete! Best fitness: {best_ever.fitness:.3f} "
-            f"(did not beat prior best {prior_best.fitness:.3f} — keeping existing weights)"
-        )
+        _save_weights(best_ever.genome, output_path)
+        print(f"Training complete! Weights saved to: {output_path}")
+
+    # Clean up candidate file.
+    candidate_path.unlink(missing_ok=True)
+
     if config.neural:
         print(f"\nNeural genome: {len(best_ever.genome)} weights")
     else:
@@ -444,3 +447,67 @@ def train(config: TrainingConfig) -> list[float]:
             print(f"  {spec.name}: {transitions[i]:.0f}")
 
     return best_ever.genome
+
+
+def _quick_benchmark(genome: list[float], neural: bool, games_per_opponent: int) -> float:
+    """Run a quick benchmark and return overall win percentage."""
+    from clauralux._engine import run_training_game_vs_bot
+    from clauralux.bots.registry import training_opponent_names_with_weights
+
+    config = GameConfig(max_ticks=10_000)
+    opponents = training_opponent_names_with_weights()
+
+    maps: list[Callable[[GameConfig], GameState]] = [
+        two_player_simple,
+        *(_make_map(f, 42 + i) for i, f in enumerate(_MAP_FLAVOUR_NAMES)),
+    ]
+
+    total_wins = 0
+    total_games = 0
+
+    for opp_name, _ in opponents:
+        for game_idx in range(games_per_opponent):
+            map_factory = maps[game_idx % len(maps)]
+            state = map_factory(config)
+            sun_ids, sun_xs, sun_ys, sun_owners, sun_garrisons, sun_levels = (
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+            )
+            for sid, sun in state.suns.items():
+                sun_ids.append(int(sid))
+                sun_xs.append(float(sun.position.x))
+                sun_ys.append(float(sun.position.y))
+                sun_owners.append(int(sun.owner))
+                sun_garrisons.append(float(sun.garrison))
+                sun_levels.append(int(sun.level))
+
+            result = run_training_game_vs_bot(
+                config,
+                sun_ids,
+                sun_xs,
+                sun_ys,
+                sun_owners,
+                sun_garrisons,
+                sun_levels,
+                [1, 2],
+                genome,
+                opp_name,
+                neural,
+                game_idx,
+            )
+            total_games += 1
+            if result.winner == 1:
+                total_wins += 1
+
+    return total_wins / max(total_games, 1) * 100
+
+
+def _make_map(flavour: str, seed: int) -> Callable[[GameConfig], GameState]:
+    def factory(cfg: GameConfig) -> GameState:
+        return generate_map(cfg, flavour, 2, seed=seed)
+
+    return factory
